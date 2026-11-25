@@ -1,5 +1,5 @@
 /** Matches every function without `any`: `never[]` parameters accept any function under strict variance. */
-export type AnyFunction = (...args: never[]) => unknown;
+type AnyFunction = (...args: never[]) => unknown;
 /** True only for `any`. */
 export type IsAny<T> = 0 extends (1 & T) ? true : false;
 /** Values the deep helpers and path suggestions treat as leaves instead of walking into. */

@@ -159,12 +159,12 @@ export type WriteOutput<T, P> = IsLoose<T> extends true ? unknown : Dynamic<P> e
 /** Whether a write could require constructing an absent parent. */
 export type HasOptionalParent<T, P> = IsLoose<T> extends true ? false : Dynamic<P> extends true ? false : [Extract<WriteResult<T, P>, OptionalParent>] extends [never] ? false : true;
 /** Whether no member of the input shape supports a readable path. */
-export type IsBadPath<T, P> = IsLoose<T> extends true ? false : Dynamic<P> extends true ? false : [Exclude<ReadWalk<T, ToTuple<P>>, Absent>] extends [never] ? false : [Exclude<ReadWalk<T, ToTuple<P>>, Absent>] extends [Missing] ? true : false;
+type IsBadPath<T, P> = IsLoose<T> extends true ? false : Dynamic<P> extends true ? false : [Exclude<ReadWalk<T, ToTuple<P>>, Absent>] extends [never] ? false : [Exclude<ReadWalk<T, ToTuple<P>>, Absent>] extends [Missing] ? true : false;
 
 /** A key as it can appear in a suggested dot path; keys containing dots can't, so they're dropped. */
 type HintKey<K> = K extends string | number ? `${K}` extends `${string}.${string}` ? never : `${K}` : never;
 /** Autocomplete suggestions only; actual path validation has no depth cap. */
-export type Paths<T, D extends number = 5, Seen extends unknown[] = []> = Seen['length'] extends D ? never : T extends Opaque ? never : T extends readonly unknown[] ? IsTuple<T> extends true ? { [K in keyof T & `${number}`]: K | `${K}.${Paths<NonNullable<T[K]>, D, [...Seen, unknown]>}` }[keyof T & `${number}`] : `${number}` | `${number}.${Paths<NonNullable<T[number]>, D, [...Seen, unknown]>}` : T extends object ? { [K in keyof T & Key]-?: HintKey<K> | `${HintKey<K>}.${Paths<NonNullable<T[K]>, D, [...Seen, unknown]>}` }[keyof T & Key] : never;
+type Paths<T, D extends number = 5, Seen extends unknown[] = []> = Seen['length'] extends D ? never : T extends Opaque ? never : T extends readonly unknown[] ? IsTuple<T> extends true ? { [K in keyof T & `${number}`]: K | `${K}.${Paths<NonNullable<T[K]>, D, [...Seen, unknown]>}` }[keyof T & `${number}`] : `${number}` | `${number}.${Paths<NonNullable<T[number]>, D, [...Seen, unknown]>}` : T extends object ? { [K in keyof T & Key]-?: HintKey<K> | `${HintKey<K>}.${Paths<NonNullable<T[K]>, D, [...Seen, unknown]>}` }[keyof T & Key] : never;
 /** Suggested paths plus dynamically checked strings, indices, tuples and lenses. */
 export type PathFor<T> = IsLoose<T> extends true ? PathInput : Paths<T> | PathTuple | number | (string & Record<never, never>) | HasPath;
 /**
@@ -175,7 +175,7 @@ export type PathFor<T> = IsLoose<T> extends true ? PathInput : Paths<T> | PathTu
  * @typeParam Expected - What would have been accepted.
  * @typeParam Got - What was passed.
  */
-export interface PathTypeError<Msg extends string, Expected, Got> {
+interface PathTypeError<Msg extends string, Expected, Got> {
   /** What is wrong, shown in the compiler error. */
   readonly __pathTypeError: Msg;
   /** What would have been accepted, such as the suggested paths. */

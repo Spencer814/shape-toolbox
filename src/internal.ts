@@ -19,7 +19,7 @@ export const isObjectLike = (value: unknown): value is object =>
  * @param value - Any value.
  * @returns Whether `value` is a plain object.
  */
-export const isPlain = (value: unknown): value is Record<PropertyKey, unknown> => {
+const isPlain = (value: unknown): value is Record<PropertyKey, unknown> => {
   if (typeof value !== 'object' || value === null) return false;
   /** Typed `unknown`, because `Object.getPrototypeOf` is typed `any`. */
   const prototype: unknown = Object.getPrototypeOf(value);
