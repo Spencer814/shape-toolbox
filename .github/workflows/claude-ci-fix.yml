@@ -9,11 +9,15 @@ permissions:
   actions: read
   issues: write
   id-token: write
+concurrency:
+  group: claude-ci-fix-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
 jobs:
   fix:
-    # Only failed runs on a pull request; never on its own fix branches or Dependabot's, which get no secrets.
+    # Only the pull_request run of a failed Verify (its push run would open a second fix); never on its own fix branches or Dependabot's, which get no secrets.
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.pull_requests[0] &&
       !startsWith(github.event.workflow_run.head_branch, 'claude-ci-fix-') &&
       !startsWith(github.event.workflow_run.head_branch, 'dependabot/')
@@ -41,7 +45,8 @@ jobs:
           name="claude-ci-fix-${safe}-${RUN_ID}"
           git checkout -b "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
-      - uses: anthropics/claude-code-action@v1
+      - id: claude
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -55,3 +60,9 @@ jobs:
             --max-turns 60
             --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm run:*),Bash(npx vitest:*),Bash(npx tsc:*),Bash(git status),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git push origin ${{ steps.branch.outputs.name }}),Bash(gh run view:*),Bash(gh pr create:*),Bash(gh pr comment:*)"
             --disallowedTools "Bash(npm publish:*),Bash(git push --force:*)"
+      - name: Summarize the Claude run
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        # Prints only Claude's final message and any refused tool calls; full output stays off on a public repo.
+        run: jq -r '.[] | select(.type == "result") | "Result: \(.result // "")", (.permission_denials[]? | "Denied: \(.tool_name) \(.tool_input | tojson)")' "$EXECUTION_FILE"

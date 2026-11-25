@@ -14,7 +14,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
-      - uses: anthropics/claude-code-action@v1
+      - id: claude
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -27,4 +28,10 @@ jobs:
             List the labels with `gh label list` and add the ones that fit with `gh issue edit ${{ github.event.issue.number }} --add-label "<label>"`. Add no other change.
           claude_args: |
             --max-turns 10
-            --allowedTools "Read,Glob,Grep,Bash(gh issue view:*),Bash(gh label list:*),Bash(gh issue edit ${{ github.event.issue.number }} --add-label:*)"
+            --allowedTools "Read,Glob,Grep,Bash(gh issue view:*),Bash(gh label list:*),Bash(gh issue edit ${{ github.event.issue.number }} --add-label:*),Bash(gh issue edit ${{ github.event.issue.number }} --repo ${{ github.repository }} --add-label:*),Bash(gh issue edit ${{ github.event.issue.number }} -R ${{ github.repository }} --add-label:*)"
+      - name: Summarize the Claude run
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        # Prints only Claude's final message and any refused tool calls; full output stays off on a public repo.
+        run: jq -r '.[] | select(.type == "result") | "Result: \(.result // "")", (.permission_denials[]? | "Denied: \(.tool_name) \(.tool_input | tojson)")' "$EXECUTION_FILE"
