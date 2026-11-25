@@ -151,7 +151,8 @@ npm run typecheck      # type tests (test/types.ts, test/path.types.ts) and the 
 npm run test:browser   # runtime tests in Chromium, Firefox and WebKit, except the five that need Node APIs
 npm run test:mutation  # Stryker: fails below an 85% mutation score
 npm run bench          # builds, then times get, set, allDeep, mapLimit and applySpecAsync against native code; not run in CI
-npm run check          # build, typecheck, lint, coverage, docs, package, size and consumer checks
+npm run api:update     # rewrites etc/shape-toolbox.api.md after an intended API change; commit it, or CI fails
+npm run check          # build, API report, typecheck, lint, coverage, docs, package, size and consumer checks
 ```
 
 `test:browser` needs the Playwright browsers once: `npx playwright install chromium firefox webkit`. CI runs `check` and `test:browser` on every push, types on TypeScript 5.9.3, 6.0.3 and 7.0.2, and mutation testing weekly. Every exported and internal declaration carries JSDoc, enforced by `eslint-plugin-jsdoc`, and every `@example` is typechecked by `npm run docs:check`.
