@@ -52,6 +52,7 @@ jobs:
           node-version: 26
           cache: npm
       - run: npm ci
+      - run: npm run build
       - run: npm exec --yes --package=typescript@${{ matrix.typescript }} -- tsc -p tsconfig.json
   types-next:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -66,4 +67,5 @@ jobs:
           node-version: 26
           cache: npm
       - run: npm ci
+      - run: npm run build
       - run: npm exec --yes --package=typescript@${{ matrix.typescript }} -- tsc -p tsconfig.json
