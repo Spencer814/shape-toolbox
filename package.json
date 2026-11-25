@@ -46,7 +46,7 @@
     "check:package": "publint && attw --pack --profile esm-only",
     "check:size": "size-limit",
     "check:consumer": "node scripts/check-consumer.mjs",
-    "check": "npm run build && npm run check:api && npm run typecheck && npm run lint && npm run coverage && npm run check:no-any && npm run docs:check && npm run docs && npm run check:imports && npm run check:package && npm run check:size && npm run check:capabilities && npm run check:consumer",
+    "check": "npm run build && npm run check:api && npm run check:type-cost && npm run typecheck && npm run lint && npm run coverage && npm run check:no-any && npm run docs:check && npm run docs && npm run check:imports && npm run check:package && npm run check:size && npm run check:capabilities && npm run check:consumer",
     "prepack": "npm run build",
     "changeset": "changeset",
     "check:capabilities": "node scripts/check-capabilities.mjs",
@@ -56,10 +56,12 @@
     "test:mutation": "stryker run",
     "bench": "npm run build && vitest bench --run --reporter=verbose",
     "api:update": "api-extractor run --local",
-    "check:api": "api-extractor run"
+    "check:api": "api-extractor run",
+    "check:type-cost": "ATTEST_shouldFormat=false node bench/types.attest.ts"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
+    "@ark/attest": "0.58.1",
     "@changesets/cli": "3.0.3",
     "@eslint/js": "10.0.1",
     "@microsoft/api-extractor": "7.60.1",
