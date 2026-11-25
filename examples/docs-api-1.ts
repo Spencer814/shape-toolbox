@@ -4,6 +4,7 @@ const result = await allDeep({
   id: Promise.resolve(1),
   nested: [Promise.resolve({ name: Promise.resolve('Andre') })],
 });
-const id: number = result.id;
-const name: string | undefined = result.nested[0]?.name;
-void [id, name];
+//=> { id: 1, nested: [{ name: 'Andre' }] }
+
+result.id; //=> 1, typed number
+result.nested[0]?.name; //=> 'Andre', typed string | undefined

@@ -4,8 +4,12 @@ const users = [
   { profile: { name: 'Andre', visits: 1 } },
   { profile: { name: 'Sam', visits: 2 } },
 ];
-const names = users.map(get('profile.name'));
-const defaults = users.map(getOr('profile.name', 'Unknown'));
-const renamed = users.map(set('profile.name', 'Pat'));
-const visited = users.map(update('profile.visits', (visits: number) => visits + 1));
-void [names, defaults, renamed, visited];
+
+users.map(get('profile.name')); //=> ['Andre', 'Sam']
+users.map(getOr('profile.name', 'Unknown')); //=> ['Andre', 'Sam']
+
+users.map(set('profile.name', 'Pat'));
+//=> [{ profile: { visits: 1, name: 'Pat' } }, { profile: { visits: 2, name: 'Pat' } }]
+
+users.map(update('profile.visits', (visits: number) => visits + 1));
+//=> [{ profile: { name: 'Andre', visits: 2 } }, { profile: { name: 'Sam', visits: 3 } }]

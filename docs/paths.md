@@ -24,11 +24,11 @@ Dotted paths separate property names with periods, such as `'profile.name'` and 
 import { get } from 'shape-toolbox';
 
 const data = { items: [{ name: 'first' }, { name: 'last' }] };
-const first = get(data, 'items.0.name');
-const last = get(data, ['items', -1, 'name'] as const);
-const literal = get({ 'a.b': { value: 3 } }, ['a.b', 'value'] as const);
-const finalItem = get(['first', 'last'], -1);
-void [first, last, literal, finalItem];
+
+get(data, 'items.0.name'); //=> 'first'
+get(data, ['items', -1, 'name'] as const); //=> 'last'
+get({ 'a.b': { value: 3 } }, ['a.b', 'value'] as const); //=> 3
+get(['first', 'last'], -1); //=> 'last'
 ```
 
 The empty string and an empty tuple select the root. Reads of missing values or out-of-range indices yield `undefined`. Typed paths reject invalid keys where the input type makes that possible. Dynamic paths cannot provide the same static guarantees as literal paths. Reusable helpers snapshot tuple paths so later changes to the caller's tuple do not redirect the operation.
@@ -43,12 +43,12 @@ The empty string and an empty tuple select the root. Reads of missing values or 
 import { getOr, getWith } from 'shape-toolbox';
 
 const data = { score: Number.NaN, active: false, count: 0, label: '' };
-const score = getOr(data, 'score', 10);
-const active = getOr(data, 'active', true);
-const count = getOr(data, 'count', 10);
-const label = getOr(data, 'label', 'Unknown');
-const display = getWith({ profile: { name: 'Andre' } }, 'profile.name', name => name.toUpperCase());
-void [score, active, count, label, display];
+
+getOr(data, 'score', 10); //=> 10
+getOr(data, 'active', true); //=> false
+getOr(data, 'count', 10); //=> 0
+getOr(data, 'label', 'Unknown'); //=> ''
+getWith({ profile: { name: 'Andre' } }, 'profile.name', name => name.toUpperCase()); //=> 'ANDRE'
 ```
 
 ## Equality
@@ -59,19 +59,13 @@ void [score, active, count, label, display];
 import { getEq } from 'shape-toolbox';
 
 const user = { profile: { id: 1 }, score: Number.NaN };
-const sameScore = getEq(user, 'score', Number.NaN);
-const sameProfile = getEq(
-  user,
-  'profile',
-  { id: 1 },
-  (actual, expected) => actual.id === expected.id,
-);
+
+getEq(user, 'score', Number.NaN); //=> true
+getEq(user, 'profile', { id: 1 }); //=> false: a different object
+getEq(user, 'profile', { id: 1 }, (actual, expected) => actual.id === expected.id); //=> true
+
 const hasProfile = getEq('profile', { id: 1 });
-const reusableComparison = hasProfile(
-  user,
-  (actual, expected) => actual.id === expected.id,
-);
-void [sameScore, sameProfile, reusableComparison];
+hasProfile(user, (actual, expected) => actual.id === expected.id); //=> true
 ```
 
 The comparator receives `(actual, expected)`. Supply a comparator with the needed semantics when migrating code that relied on Ramda's deep equality.
@@ -84,12 +78,14 @@ The comparator receives `(actual, expected)`. Supply a comparator with the neede
 import { set, update } from 'shape-toolbox';
 
 const original = { profile: { name: 'Andre', count: 1 }, unchanged: { id: 2 } };
+
 const renamed = set(original, 'profile.name', 'Sam');
-const incremented = update(original, 'profile.count', count => count + 1);
-const same = set(original, 'profile.name', 'Andre');
-const sharedBranch = renamed.unchanged === original.unchanged;
-const sameRoot = same === original;
-void [incremented, sharedBranch, sameRoot];
+renamed.profile; //=> { count: 1, name: 'Sam' }
+
+update(original, 'profile.count', count => count + 1).profile; //=> { name: 'Andre', count: 2 }
+
+renamed.unchanged === original.unchanged; //=> true: untouched branches are shared
+set(original, 'profile.name', 'Andre') === original; //=> true: nothing changed
 ```
 
 Writes never silently invent a missing parent. A write through an optional parent is a compile error. Set a complete parent value to create it, or update the parent only when it is present.
@@ -99,11 +95,12 @@ import { set, update } from 'shape-toolbox';
 
 type User = { address?: { city: string; zip: string } };
 const user: User = {};
-const created = set(user, 'address', { city: 'Columbia', zip: '65201' });
-const ifPresent = update(user, 'address', address =>
-  address ? { ...address, city: 'Columbia' } : address,
-);
-void [created, ifPresent];
+
+set(user, 'address', { city: 'Columbia', zip: '65201' });
+//=> { address: { city: 'Columbia', zip: '65201' } }
+
+update(user, 'address', address => (address ? { ...address, city: 'Columbia' } : address));
+//=> {}: there is no address, so nothing is written
 ```
 
 For untyped inputs or runtime paths, encountering a missing parent throws a `TypeError` naming the path. Writes through non-plain parents also throw. Writes to unsafe prototype-related keys are rejected. Replacing a complete field is distinct from traversing into a non-plain value.
@@ -121,11 +118,15 @@ const users = [
   { profile: { name: 'Andre', visits: 1 } },
   { profile: { name: 'Sam', visits: 2 } },
 ];
-const names = users.map(get('profile.name'));
-const defaults = users.map(getOr('profile.name', 'Unknown'));
-const renamed = users.map(set('profile.name', 'Pat'));
-const visited = users.map(update('profile.visits', (visits: number) => visits + 1));
-void [names, defaults, renamed, visited];
+
+users.map(get('profile.name')); //=> ['Andre', 'Sam']
+users.map(getOr('profile.name', 'Unknown')); //=> ['Andre', 'Sam']
+
+users.map(set('profile.name', 'Pat'));
+//=> [{ profile: { visits: 1, name: 'Pat' } }, { profile: { visits: 2, name: 'Pat' } }]
+
+users.map(update('profile.visits', (visits: number) => visits + 1));
+//=> [{ profile: { name: 'Andre', visits: 2 } }, { profile: { name: 'Sam', visits: 3 } }]
 ```
 
 A lens fixes both the object type and the path:
@@ -136,13 +137,13 @@ import { lens } from 'shape-toolbox';
 type User = { profile: { name: string } };
 const name = lens<User>()('profile.name');
 const user: User = { profile: { name: 'Andre' } };
-const value = name.get(user);
-const fallback = name.getOr('Unknown')(user);
-const uppercase = name.getWith(value => value.toUpperCase())(user);
-const matches = name.getEq('Andre')(user);
-const changed = name.set('Sam')(user);
-const updated = name.update(value => value.toUpperCase())(user);
-void [value, fallback, uppercase, matches, changed, updated];
+
+name.get(user); //=> 'Andre'
+name.getOr('Unknown')(user); //=> 'Andre'
+name.getWith(value => value.toUpperCase())(user); //=> 'ANDRE'
+name.getEq('Andre')(user); //=> true
+name.set('Sam')(user); //=> { profile: { name: 'Sam' } }
+name.update(value => value.toUpperCase())(user); //=> { profile: { name: 'ANDRE' } }
 ```
 
 Use `name.getEq(expected, compare)(object)` for a custom lens comparator. The lens methods preserve the focused value type.
@@ -160,14 +161,18 @@ const user: User = {
   active: true,
 };
 const focus = lens<User>()('address.city');
-const city = get(user, focus);
+
+get(user, focus); //=> 'St. Louis'
+
 const changed = set(user, focus, 'Columbia');
+changed.address; //=> { zip: '63101', city: 'Columbia' }
+
 const readCity = get(focus);
-const reusable = readCity(user);
+readCity(user); //=> 'St. Louis'
+
 const users: User[] = [user, changed];
-const cities = users.map(readCity);
-const activeUsers = users.filter(getEq('active', true));
-void [city, reusable, cities, activeUsers];
+users.map(readCity); //=> ['St. Louis', 'Columbia']
+users.filter(getEq('active', true)).length; //=> 2
 ```
 
 Passing the lens as a path preserves the same type checks and strict write rules as its original path. The `map` and `filter` callbacks above do not interpret their automatically supplied index arguments as operation options or equality comparators.

@@ -67,6 +67,11 @@ export default tseslint.config(
     },
   },
   {
+    // Doc examples show a value on its own line, followed by //=> and the result.
+    files: ['examples/**/*.ts'],
+    rules: { '@typescript-eslint/no-unused-expressions': 'off' },
+  },
+  {
     // Tests feed untyped data on purpose to prove `any` input comes out as `unknown`.
     files: ['test/**/*.ts', 'examples/**/*.ts'],
     rules: {

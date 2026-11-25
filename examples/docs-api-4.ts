@@ -1,11 +1,11 @@
 import { mapLimit } from 'shape-toolbox';
 
-const result = await mapLimit(
+await mapLimit(
   [3, 1, 2],
-  async (value, index, signal) => {
+  (value, index, signal) => {
     signal.throwIfAborted();
-    return { index, doubled: value * 2 };
+    return Promise.resolve({ index, doubled: value * 2 });
   },
   { concurrency: 2 },
 );
-void result;
+//=> [{ index: 0, doubled: 6 }, { index: 1, doubled: 2 }, { index: 2, doubled: 4 }]

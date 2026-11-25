@@ -26,11 +26,12 @@ const load = applySpecAsync(
   { concurrency: 2 },
 );
 
-const result = await load(1);
-// { profile: { id: 1, name: 'Andre' },
-//   nested: { orders: [{ ownerId: 1, total: 42 }] },
-//   labels: ['user-1'] }
-void result;
+await load(1);
+//=> {
+//     profile: { id: 1, name: 'Andre' },
+//     nested: { orders: [{ ownerId: 1, total: 42 }] },
+//     labels: ['user-1'],
+//   }
 ```
 
 No specification function runs until `load` is called. Every leaf shares the same concurrency budget, including leaves in nested objects and arrays. The output shape and each leaf's result type are inferred.
@@ -41,16 +42,63 @@ No specification function runs until `load` is called. Every leaf shares the sam
 import { get, getOr, getWith, set, update } from 'shape-toolbox';
 
 const original = { profile: { name: 'Andre', visits: 1 } };
-const name = get(original, 'profile.name');
-const label = getWith(original, 'profile.name', value => value.toUpperCase());
-const fallback = getOr({ name: null }, 'name', 'Unknown');
-const changed = set(original, 'profile.name', 'Sam');
-const incremented = update(original, 'profile.visits', value => value + 1);
-const names = [original, changed].map(get('profile.name'));
-void [name, label, fallback, incremented, names];
+
+get(original, 'profile.name'); //=> 'Andre'
+getWith(original, 'profile.name', value => value.toUpperCase()); //=> 'ANDRE'
+getOr({ name: null }, 'name', 'Unknown'); //=> 'Unknown'
+
+const changed = set(original, 'profile.name', 'Sam'); //=> { profile: { visits: 1, name: 'Sam' } }
+update(original, 'profile.visits', value => value + 1); //=> { profile: { name: 'Andre', visits: 2 } }
+
+[original, changed].map(get('profile.name')); //=> ['Andre', 'Sam']
+get(original, 'profile.name'); //=> still 'Andre': writes never change the original
 ```
 
 Typed dotted and tuple paths support objects, arrays, reusable data-last functions, and lenses. Writes preserve the original, copy changed ancestors, and retain identity for unchanged values. See the [path guide](docs/paths.md).
+
+Compare a value, or keep a path as a reusable lens:
+
+```ts
+import { getEq, lens } from 'shape-toolbox';
+
+type User = { name: string; stats: { visits: number } };
+const user: User = { name: 'Andre', stats: { visits: 1 } };
+const visits = lens<User>()('stats.visits');
+
+getEq(user, 'name', 'Andre'); //=> true
+visits.get(user); //=> 1
+visits.set(5)(user); //=> { name: 'Andre', stats: { visits: 5 } }
+visits.update(count => count + 1)(user); //=> { name: 'Andre', stats: { visits: 2 } }
+```
+
+## Resolve nested promises
+
+```ts
+import { allDeep, allKeyed, allSettledDeep, allSettledKeyed, failedPath, mapLimit } from 'shape-toolbox';
+
+await allDeep({ user: Promise.resolve({ id: 7 }), tags: [Promise.resolve('vip'), 'new'] });
+//=> { user: { id: 7 }, tags: ['vip', 'new'] }
+
+await allSettledDeep({ credit: Promise.reject(new Error('timeout')), income: Promise.resolve(5200) });
+//=> { credit: { status: 'rejected', reason: Error('timeout') },
+//     income: { status: 'fulfilled', value: 5200 } }
+
+await allKeyed({ name: Promise.resolve('Andre'), visits: 1 });
+//=> { name: 'Andre', visits: 1 }
+
+await allSettledKeyed({ income: Promise.resolve(5200), assets: Promise.reject(new Error('none')) });
+//=> { income: { status: 'fulfilled', value: 5200 },
+//     assets: { status: 'rejected', reason: Error('none') } }
+
+await mapLimit([1, 2, 3], id => Promise.resolve(id * 10), { concurrency: 2 });
+//=> [10, 20, 30]
+
+try {
+  await allDeep({ user: { orders: Promise.reject(new Error('orders down')) } });
+} catch (error) {
+  failedPath(error); //=> ['user', 'orders']
+}
+```
 
 ## API
 
@@ -67,7 +115,7 @@ Typed dotted and tuple paths support objects, arrays, reusable data-last functio
 | `applySpecAsync(spec, { concurrency, signal, mode }?)` | Create a function that executes a nested specification. |
 | `failedPath(error)` | Retrieve a deep, specification, or mapper failure path without wrapping its error. |
 
-The public type helpers are `DeepAwaited`, `DeepSettled`, `Spec`, `SpecArgs`, `SpecResult`, and `SpecSettled`. See the [async API guide](docs/api.md), [path guide](docs/paths.md), [recipes](docs/recipes.md), and [Go equivalents](docs/go-equivalents.md).
+The public type helpers are `DeepAwaited`, `DeepSettled`, `Spec`, `SpecArgs`, `SpecResult`, and `SpecSettled`. See the [async API guide](docs/api.md), [path guide](docs/paths.md), and [recipes](docs/recipes.md).
 
 ## Behavior
 

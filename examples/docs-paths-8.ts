@@ -6,11 +6,15 @@ const user: User = {
   active: true,
 };
 const focus = lens<User>()('address.city');
-const city = get(user, focus);
+
+get(user, focus); //=> 'St. Louis'
+
 const changed = set(user, focus, 'Columbia');
+changed.address; //=> { zip: '63101', city: 'Columbia' }
+
 const readCity = get(focus);
-const reusable = readCity(user);
+readCity(user); //=> 'St. Louis'
+
 const users: User[] = [user, changed];
-const cities = users.map(readCity);
-const activeUsers = users.filter(getEq('active', true));
-void [city, reusable, cities, activeUsers];
+users.map(readCity); //=> ['St. Louis', 'Columbia']
+users.filter(getEq('active', true)).length; //=> 2

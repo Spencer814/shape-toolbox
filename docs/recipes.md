@@ -8,10 +8,12 @@ Pass a signal factory. Each call of the returned function gets a fresh timeout:
 import { applySpecAsync } from 'shape-toolbox';
 
 const loadUser = applySpecAsync(
-  { profile: async (id: number) => ({ id }) },
+  { profile: (id: number) => Promise.resolve({ id }) },
   { signal: () => AbortSignal.timeout(5_000) },
 );
-void loadUser;
+
+await loadUser(7);
+//=> { profile: { id: 7 } }
 ```
 
 ## A deadline that also reaches `fetch`
@@ -37,7 +39,9 @@ const load = async (id: number): Promise<{ profile: unknown }> => {
     { signal },
   )(id);
 };
-void load;
+
+await load(7);
+//=> { profile: <the JSON the server returned> }
 ```
 
 This signal rejects the composition and also reaches `fetch`. Passing it only to `applySpecAsync` would stop queued leaves and reject the result, but would not automatically abort a leaf's fetch.
@@ -62,8 +66,7 @@ controller.abort(new Error('Canceled'));
 try {
   await pending;
 } catch (error) {
-  const canceled = error === controller.signal.reason;
-  void canceled;
+  error === controller.signal.reason; //=> true
 }
 ```
 
@@ -90,9 +93,9 @@ class Box {
 
 const box = new Box();
 const result = await allDeep({ box });
-// result.box is the original Box at runtime, with its promise still present.
-const unchanged = Object.is(result.box, box);
-void unchanged;
+
+Object.is(result.box, box); //=> true: the instance is returned untouched
+result.box.value; //=> Promise { 1 }, still a promise at runtime
 ```
 
 TypeScript's structural type system cannot generally distinguish a class instance from a plain object with the same fields. `DeepAwaited` and `DeepSettled` can therefore describe a class's promise properties as transformed even though runtime traversal leaves that instance unchanged. Keep deeply traversed inputs to ordinary data objects when you need exact type/runtime agreement.

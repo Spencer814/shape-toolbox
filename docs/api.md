@@ -13,9 +13,10 @@ const result = await allDeep({
   id: Promise.resolve(1),
   nested: [Promise.resolve({ name: Promise.resolve('Andre') })],
 });
-const id: number = result.id;
-const name: string | undefined = result.nested[0]?.name;
-void [id, name];
+//=> { id: 1, nested: [{ name: 'Andre' }] }
+
+result.id; //=> 1, typed number
+result.nested[0]?.name; //=> 'Andre', typed string | undefined
 ```
 
 Non-plain values remain the same objects. Neither this helper nor its signal can prevent work that started before the helper was called. Cycles are structural errors and reject the returned promise.
@@ -27,18 +28,18 @@ Non-plain values remain the same objects. Neither this helper nor its signal can
 ```ts
 import { allSettledDeep } from 'shape-toolbox';
 
-const result = await allSettledDeep({
+await allSettledDeep({
   plain: 1,
   ok: Promise.resolve('ready'),
   bad: Promise.reject('unavailable'),
   nested: Promise.resolve({ count: Promise.resolve(2) }),
 });
-// plain: 1
-// ok: { status: 'fulfilled', value: 'ready' }
-// bad: { status: 'rejected', reason: 'unavailable' }
-// nested: { status: 'fulfilled',
-//           value: { count: { status: 'fulfilled', value: 2 } } }
-void result;
+//=> {
+//     plain: 1,
+//     ok: { status: 'fulfilled', value: 'ready' },
+//     bad: { status: 'rejected', reason: 'unavailable' },
+//     nested: { status: 'fulfilled', value: { count: { status: 'fulfilled', value: 2 } } },
+//   }
 ```
 
 Native promise assimilation collapses directly chained promises before settlement. A promise resolving to another promise therefore has one settled wrapper, while promises found inside its resolved object retain their own wrappers.
@@ -52,17 +53,14 @@ Both functions accept an object, including a callable object, and read its own e
 ```ts
 import { allKeyed, allSettledKeyed } from 'shape-toolbox';
 
-const values = await allKeyed({ count: Promise.resolve(2), label: 'ready' });
-const results = await allSettledKeyed({
-  ok: Promise.resolve(2),
-  bad: Promise.reject('unavailable'),
-});
-const count: number = values.count;
-if (results.ok.status === 'fulfilled') {
-  const value: number = results.ok.value;
-  void value;
-}
-void count;
+await allKeyed({ count: Promise.resolve(2), label: 'ready' });
+//=> { count: 2, label: 'ready' }
+
+await allSettledKeyed({ ok: Promise.resolve(2), bad: Promise.reject('unavailable') });
+//=> {
+//     ok: { status: 'fulfilled', value: 2 },
+//     bad: { status: 'rejected', reason: 'unavailable' },
+//   }
 ```
 
 These helpers are shallow. If a property resolves to an object containing another promise, that inner promise remains unchanged. `allKeyed` rejects on failure; `allSettledKeyed` records each property's success or failure.
@@ -76,15 +74,15 @@ See the [keyed combinators proposal](https://github.com/tc39/proposal-keyed-comb
 ```ts
 import { mapLimit } from 'shape-toolbox';
 
-const result = await mapLimit(
+await mapLimit(
   [3, 1, 2],
-  async (value, index, signal) => {
+  (value, index, signal) => {
     signal.throwIfAborted();
-    return { index, doubled: value * 2 };
+    return Promise.resolve({ index, doubled: value * 2 });
   },
   { concurrency: 2 },
 );
-void result;
+//=> [{ index: 0, doubled: 6 }, { index: 1, doubled: 2 }, { index: 2, doubled: 4 }]
 ```
 
 On the first failure, the returned promise rejects with that reason, queued callbacks stop, and the signal supplied to running callbacks is aborted. Running callbacks must observe the signal to stop their own external work. Callback rejections remain observed after the result has rejected.
@@ -98,20 +96,26 @@ import { applySpecAsync } from 'shape-toolbox';
 
 const build = applySpecAsync(
   {
-    total: async (amount: number, tax = 0) => amount + tax,
+    total: (amount: number, tax = 0) => amount + tax,
     nested: { label: (amount: number) => String(amount) },
-    list: [async (amount: number) => amount * 2],
+    list: [(amount: number) => Promise.resolve(amount * 2)],
   },
   { concurrency: 2 },
 );
-const result = await build(10, 2);
+
+await build(10, 2);
+//=> { total: 12, nested: { label: '10' }, list: [20] }
 
 const collect = applySpecAsync(
   { ok: () => 1, bad: () => Promise.reject('unavailable') },
   { mode: 'settled' },
 );
-const settled = await collect();
-void [result, settled];
+
+await collect();
+//=> {
+//     ok: { status: 'fulfilled', value: 1 },
+//     bad: { status: 'rejected', reason: 'unavailable' },
+//   }
 ```
 
 The specification is read and validated once, when `applySpecAsync` is called. Its functions and container shape are captured then, so later changes to the specification object do not affect the returned function.
@@ -133,14 +137,14 @@ import { applySpecAsync, failedPath } from 'shape-toolbox';
 
 const failure = new Error('Orders unavailable');
 const load = applySpecAsync({
-  nested: { orders: async () => { throw failure; } },
+  nested: { orders: () => Promise.reject(failure) },
 });
+
 try {
   await load();
 } catch (error) {
-  const path = failedPath(error); // ['nested', 'orders']
-  const sameError = error === failure; // true
-  void [path, sameError];
+  failedPath(error); //=> ['nested', 'orders']
+  error === failure; //=> true
 }
 ```
 
@@ -172,7 +176,7 @@ import type {
   SpecSettled,
 } from 'shape-toolbox';
 
-const specification = { value: async (id: number) => String(id) } satisfies Spec;
+const specification = { value: (id: number) => Promise.resolve(String(id)) } satisfies Spec;
 type Input = SpecArgs<typeof specification>;
 type Output = SpecResult<typeof specification>;
 type SettledOutput = SpecSettled<typeof specification>;
@@ -181,10 +185,10 @@ type DeepSettledOutput = DeepSettled<{ value: Promise<number> }>;
 
 const args: Input = [1];
 const result: Output = await applySpecAsync(specification)(...args);
+result; //=> { value: '1' }
+
+// A value of each remaining type:
 const settled: SettledOutput = { value: { status: 'fulfilled', value: '1' } };
 const deep: DeepOutput = { value: 1 };
-const deepSettled: DeepSettledOutput = {
-  value: { status: 'fulfilled', value: 1 },
-};
-void [result, settled, deep, deepSettled];
+const deepSettled: DeepSettledOutput = { value: { status: 'fulfilled', value: 1 } };
 ```

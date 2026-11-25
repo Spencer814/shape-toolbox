@@ -1,20 +1,21 @@
-import { mapLimit } from 'shape-toolbox';
+import { applySpecAsync } from 'shape-toolbox';
 
-const controller = new AbortController();
-const pending = mapLimit(
-  [1, 2, 3],
-  async (id, _index, signal) => {
-    const response = await fetch(`https://example.com/users/${id}`, { signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json() as Promise<unknown>;
-  },
-  { concurrency: 2, signal: controller.signal },
-);
+const load = async (id: number): Promise<{ profile: unknown }> => {
+  const signal = AbortSignal.timeout(5_000);
+  return applySpecAsync(
+    {
+      profile: async (userId: number) => {
+        const response = await fetch(
+          `https://example.com/users/${userId}`,
+          { signal },
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json() as Promise<unknown>;
+      },
+    },
+    { signal },
+  )(id);
+};
 
-controller.abort(new Error('Canceled'));
-try {
-  await pending;
-} catch (error) {
-  const canceled = error === controller.signal.reason;
-  void canceled;
-}
+await load(7);
+//=> { profile: <the JSON the server returned> }

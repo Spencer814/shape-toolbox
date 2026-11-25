@@ -11,8 +11,9 @@ const load = applySpecAsync(
   { concurrency: 2 },
 );
 
-const result = await load(1);
-// { profile: { id: 1, name: 'Andre' },
-//   nested: { orders: [{ ownerId: 1, total: 42 }] },
-//   labels: ['user-1'] }
-void result;
+await load(1);
+//=> {
+//     profile: { id: 1, name: 'Andre' },
+//     nested: { orders: [{ ownerId: 1, total: 42 }] },
+//     labels: ['user-1'],
+//   }
