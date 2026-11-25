@@ -164,3 +164,85 @@ describe('async laws', () => {
     ), { numRuns: 40 });
   });
 });
+
+/** Keys for the lens law: plain, index-like, negative, and the unsafe ones. */
+const lensKey = fc.constantFrom<string | number>('a', 'b', '0', 0, 1, -1, '__proto__', 'constructor');
+/** Trees that may or may not contain the path, with arrays, objects and primitives in between. */
+const lensTree = fc.letrec<{ node: unknown }>(tie => ({
+  node: fc.oneof(
+    { depthSize: 'small', withCrossShrink: true },
+    fc.jsonValue({ maxDepth: 0 }),
+    fc.array(tie('node'), { maxLength: 3 }),
+    fc.dictionary(fc.constantFrom('a', 'b', '0'), tie('node'), { maxKeys: 3 }),
+  ),
+})).node;
+
+/** What a call did: its value, or the error it threw. */
+type Result = { readonly value: unknown } | { readonly error: string };
+
+/**
+ * Runs a call and records its value or error.
+ *
+ * @param fn - The call.
+ * @returns The value, or the error's name and message.
+ */
+const attempt = (fn: () => unknown): Result => {
+  try {
+    return { value: fn() };
+  } catch (error) {
+    return { error: `${(error as Error).name}: ${(error as Error).message}` };
+  }
+};
+
+/**
+ * Checks that two calls on `obj` agree on value, error, and whether they returned `obj` itself.
+ *
+ * @param obj - The input both calls read.
+ * @param viaLens - The call through a lens.
+ * @param direct - The direct call.
+ */
+const expectSame = (obj: unknown, viaLens: () => unknown, direct: () => unknown): void => {
+  /** The lens result. */
+  const a = attempt(viaLens);
+  /** The direct result. */
+  const b = attempt(direct);
+  expect(a).toEqual(b);
+  if ('value' in a && 'value' in b) expect(a.value === obj).toBe(b.value === obj);
+};
+
+describe('lens law', () => {
+  it('lens(path) get, set and update equal direct get, set and update, for tuple and dot paths', () => {
+    fc.assert(fc.property(
+      lensTree,
+      fc.array(lensKey, { maxLength: 4 }),
+      fc.jsonValue({ maxDepth: 1 }),
+      fc.boolean(),
+      (obj, keys, value, keep) => {
+        /** The tuple path. */
+        const tuple = keys as PathTuple;
+        /** The dot form, when every key survives the round trip through a string. */
+        const dot = keys.every(k => typeof k === 'number' ? k >= 0 : !k.includes('.') && !/^\d+$/.test(k)) ? keys.join('.') : undefined;
+        /**
+         * The update function: identity or a wrap.
+         *
+         * @param v - The current value.
+         * @returns The new value.
+         */
+        const fn = (v: unknown): unknown => keep ? v : [v];
+        for (const path of dot === undefined ? [tuple] : [tuple, dot]) {
+          /** The lens under test. */
+          const l = attempt(() => lens<unknown>()(path as never));
+          if (!('value' in l)) {
+            expect(attempt(() => get(obj, path as never))).toEqual(l);
+            continue;
+          }
+          /** The built lens. */
+          const focus = l.value as { get: (o: unknown) => unknown; set: (v: unknown) => (o: unknown) => unknown; update: (f: (v: unknown) => unknown) => (o: unknown) => unknown };
+          expectSame(obj, () => focus.get(obj), () => get(obj, path as never));
+          expectSame(obj, () => focus.set(value)(obj), () => set(obj, path as never, value as never));
+          expectSame(obj, () => focus.update(fn)(obj), () => update(obj, path as never, fn as never));
+        }
+      },
+    ), { numRuns: 300 });
+  });
+});
