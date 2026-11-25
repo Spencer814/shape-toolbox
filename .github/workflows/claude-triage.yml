@@ -34,4 +34,5 @@ jobs:
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         # Prints only Claude's final message and any refused tool calls; full output stays off on a public repo.
-        run: jq -r '.[] | select(.type == "result") | "Result: \(.result // "")", (.permission_denials[]? | "Denied: \(.tool_name) \(.tool_input | tojson)")' "$EXECUTION_FILE"
+        run: |
+          jq -r '.[] | select(.type == "result") | "Result: \(.result // "")", (.permission_denials[]? | "Denied: \(.tool_name) \(.tool_input | tojson)")' "$EXECUTION_FILE"
