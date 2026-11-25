@@ -150,6 +150,7 @@ npm test               # unit and property tests in Node
 npm run typecheck      # type tests (test/types.ts, test/path.types.ts) and the examples
 npm run test:browser   # runtime tests in Chromium, Firefox and WebKit, except the five that need Node APIs
 npm run test:mutation  # Stryker: fails below an 85% mutation score
+npm run bench          # builds, then times get, set, allDeep, mapLimit and applySpecAsync against native code; not run in CI
 npm run check          # build, typecheck, lint, coverage, docs, package, size and consumer checks
 ```
 

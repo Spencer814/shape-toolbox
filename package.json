@@ -53,7 +53,8 @@
     "typecheck:matrix": "npm run typecheck && npx -y -p typescript@5.9.3 tsc -p tsconfig.json && npx -y -p typescript@7.0.2 tsc -p tsconfig.json",
     "check:no-any": "node scripts/check-no-any.mjs",
     "test:browser": "vitest run --config vitest.browser.config.ts",
-    "test:mutation": "stryker run"
+    "test:mutation": "stryker run",
+    "bench": "npm run build && vitest bench --run --reporter=verbose"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
