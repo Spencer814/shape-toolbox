@@ -21,6 +21,8 @@ result.nested[0]?.name; //=> 'Andre', typed string | undefined
 
 Non-plain values remain the same objects. Neither this helper nor its signal can prevent work that started before the helper was called. Cycles are structural errors and reject the returned promise.
 
+The input is read during the call, so later changes to it don't affect the result. After an abort, both deep helpers read nothing more: no getter runs, no custom `then` is called, and resolved values are not followed. Native promises still reachable through data properties get a handler, so none is reported as unhandled.
+
 ## allSettledDeep
 
 `allSettledDeep<T>(value: T, options?): Promise<DeepSettled<T>>` preserves ordinary values and replaces each promise boundary with a settled result. A fulfilled promise's value is recursively processed, so a promise resolving to an object retains an outer fulfilled wrapper.
@@ -62,6 +64,8 @@ await allSettledKeyed({ ok: Promise.resolve(2), bad: Promise.reject('unavailable
 //     bad: { status: 'rejected', reason: 'unavailable' },
 //   }
 ```
+
+A Map, Set, promise or other thenable has no own properties to await: it is a compile error, and from untyped code a `TypeError` rejection.
 
 These helpers are shallow. If a property resolves to an object containing another promise, that inner promise remains unchanged. `allKeyed` rejects on failure; `allSettledKeyed` records each property's success or failure.
 
@@ -160,6 +164,7 @@ Valid interface-shaped specifications are checked by their members and do not ne
 | --- | --- |
 | `DeepAwaited<T>` | Awaited shape for deep traversal |
 | `DeepSettled<T>` | Shape with settled results at promise boundaries |
+| `Settled<T>` | A settled result whose rejection `reason` is `unknown`, not `any` |
 | `Spec` | Supported specification structure |
 | `SpecArgs<S>` | Shared argument tuple accepted by the specification |
 | `SpecResult<S>` | Shape containing awaited function results |

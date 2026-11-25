@@ -175,3 +175,9 @@ it('creates a fresh signal per call from a signal factory', async () => {
   const stale = applySpecAsync({ value: () => 1 }, { signal: AbortSignal.abort(new Error('stale')) });
   await expect(stale()).rejects.toThrow('stale');
 });
+
+describe('applySpecAsync: contracts the mutation run found unpinned', () => {
+  it('names the root in errors about the spec itself', () => {
+    expect(() => applySpecAsync({ [Symbol('key')]: () => 1 } as never)).toThrow(new TypeError('applySpecAsync: spec keys at (root) must be strings or array indices'));
+  });
+});

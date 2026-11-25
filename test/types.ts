@@ -1,12 +1,12 @@
 import { expectTypeOf } from 'vitest';
 import { allDeep, allSettledDeep, allKeyed, allSettledKeyed, applySpecAsync, mapLimit } from '../src/index.js';
-import type { DeepAwaited, DeepSettled, Spec, SpecArgs, SpecOptions, SpecResult, SpecSettled } from '../src/index.js';
+import type { DeepAwaited, DeepSettled, KeyedSettled, Settled, Spec, SpecArgs, SpecOptions, SpecResult, SpecSettled } from '../src/index.js';
 
 /** Deep resolution types unwrap nested promises and keep leaves. */
 expectTypeOf<DeepAwaited<Promise<{ a: Promise<1>; readonly b: readonly [Promise<'x'>, 2] }>>>().toEqualTypeOf<{ a: 1; b: ['x', 2] }>();
 expectTypeOf<DeepAwaited<{ a?: Promise<number>; date: Date; map: Map<string, Promise<number>> }>>().toEqualTypeOf<{ a?: number; date: Date; map: Map<string, Promise<number>> }>();
-expectTypeOf<DeepSettled<{ a: Promise<number>; b: 1; c: readonly [Promise<string>] }>>().toEqualTypeOf<{ a: PromiseSettledResult<number>; b: 1; c: [PromiseSettledResult<string>] }>();
-expectTypeOf<DeepSettled<Promise<{ a: Promise<number> }>>>().toEqualTypeOf<PromiseSettledResult<{ a: PromiseSettledResult<number> }>>();
+expectTypeOf<DeepSettled<{ a: Promise<number>; b: 1; c: readonly [Promise<string>] }>>().toEqualTypeOf<{ a: Settled<number>; b: 1; c: [Settled<string>] }>();
+expectTypeOf<DeepSettled<Promise<{ a: Promise<number> }>>>().toEqualTypeOf<Settled<{ a: Settled<number> }>>();
 
 /**
  * Adds two numbers asynchronously.
@@ -90,10 +90,10 @@ const unionOptions: SpecOptions = { mode: Math.random() > 0.5 ? 'all' : 'settled
 /** A runner built with them. */
 const unionMode = applySpecAsync({ a: () => 1 }, unionOptions);
 /** The `mode` option picks the result type, including a union when unknown. */
-expectTypeOf<ReturnType<typeof settled>>().toEqualTypeOf<Promise<{ list: [PromiseSettledResult<number>] }>>();
-expectTypeOf<ReturnType<typeof unionMode>>().toEqualTypeOf<Promise<{ a: number } | { a: PromiseSettledResult<number> }>>();
+expectTypeOf<ReturnType<typeof settled>>().toEqualTypeOf<Promise<{ list: [Settled<number>] }>>();
+expectTypeOf<ReturnType<typeof unionMode>>().toEqualTypeOf<Promise<{ a: number } | { a: Settled<number> }>>();
 expectTypeOf<SpecResult<readonly [() => Promise<1>]>>().toEqualTypeOf<[1]>();
-expectTypeOf<SpecSettled<readonly [() => Promise<1>]>>().toEqualTypeOf<[PromiseSettledResult<1>]>();
+expectTypeOf<SpecSettled<readonly [() => Promise<1>]>>().toEqualTypeOf<[Settled<1>]>();
 
 /** A keyed resolution. */
 const keyed = allKeyed({ a: Promise.resolve(1), b: 'two' });
@@ -107,10 +107,23 @@ const deepSettled = allSettledDeep({ a: [Promise.resolve(1)] });
 const limited = mapLimit([1, 2], (id, index, signal) => { signal.throwIfAborted(); return Promise.resolve(id + index); });
 /** The keyed, deep and map helpers infer their results. */
 expectTypeOf<typeof keyed>().toEqualTypeOf<Promise<{ a: number; b: 'two' }>>();
-expectTypeOf<typeof keyedSettled>().toEqualTypeOf<Promise<{ a: PromiseSettledResult<number> }>>();
+expectTypeOf<typeof keyedSettled>().toEqualTypeOf<Promise<{ a: Settled<number> }>>();
 expectTypeOf<typeof deep>().toEqualTypeOf<Promise<{ a: number[] }>>();
-expectTypeOf<typeof deepSettled>().toEqualTypeOf<Promise<{ a: PromiseSettledResult<number>[] }>>();
+expectTypeOf<typeof deepSettled>().toEqualTypeOf<Promise<{ a: Settled<number>[] }>>();
 expectTypeOf<typeof limited>().toEqualTypeOf<Promise<number[]>>();
+
+/**
+ * The rejection reason of a settled result type.
+ *
+ * @typeParam S - A settled result type.
+ */
+type ReasonOf<S> = Extract<S, { status: 'rejected' }> extends { reason: infer R } ? R : never;
+/** Every settled result types its rejection reason as `unknown`, never `any`. */
+expectTypeOf<ReasonOf<Settled<number>>>().toEqualTypeOf<unknown>();
+expectTypeOf<ReasonOf<DeepSettled<{ a: Promise<number> }>['a']>>().toEqualTypeOf<unknown>();
+expectTypeOf<ReasonOf<KeyedSettled<{ a: Promise<number> }>['a']>>().toEqualTypeOf<unknown>();
+expectTypeOf<ReasonOf<SpecSettled<{ a: () => number }>['a']>>().toEqualTypeOf<unknown>();
+expectTypeOf<ReasonOf<Awaited<typeof keyedSettled>['a']>>().toEqualTypeOf<unknown>();
 
 void [settled, unionMode, keyed, keyedSettled, deep, deepSettled, limited];
 
@@ -129,7 +142,7 @@ const first: number = indexed[0];
 /** The second element's type. */
 const second: string = indexed[1];
 /** The first settled element's type. */
-const firstSettled: PromiseSettledResult<number> = indexedSettled[0];
+const firstSettled: Settled<number> = indexedSettled[0];
 // @ts-expect-error keyed output is a record, not an array
 void indexed.map;
 // @ts-expect-error nonenumerable array length is absent
@@ -157,9 +170,9 @@ const title: string = decoratedOutput.title;
 /** The awaited symbol property. */
 const custom: boolean = decoratedOutput[customKey];
 /** The settled string property. */
-const settledTitle: PromiseSettledResult<string> = decoratedSettledOutput.title;
+const settledTitle: Settled<string> = decoratedSettledOutput.title;
 /** The settled symbol property. */
-const settledCustom: PromiseSettledResult<boolean> = decoratedSettledOutput[customKey];
+const settledCustom: Settled<boolean> = decoratedSettledOutput[customKey];
 void [optionalOptions, title, custom, settledTitle, settledCustom];
 
 /** A rest leaf beside an optional one. */
@@ -187,9 +200,9 @@ if (nativeSettled.status === 'fulfilled') {
   void value;
 }
 /** Nested promises are assimilated as the runtime resolves them. */
-expectTypeOf<DeepSettled<Promise<Promise<number>>>>().toEqualTypeOf<PromiseSettledResult<number>>();
-expectTypeOf<DeepSettled<PromiseLike<PromiseLike<number>>>>().toEqualTypeOf<PromiseSettledResult<number>>();
-expectTypeOf<DeepSettled<Promise<{ child: Promise<number> }>>>().toEqualTypeOf<PromiseSettledResult<{ child: PromiseSettledResult<number> }>>();
+expectTypeOf<DeepSettled<Promise<Promise<number>>>>().toEqualTypeOf<Settled<number>>();
+expectTypeOf<DeepSettled<PromiseLike<PromiseLike<number>>>>().toEqualTypeOf<Settled<number>>();
+expectTypeOf<DeepSettled<Promise<{ child: Promise<number> }>>>().toEqualTypeOf<Settled<{ child: Settled<number> }>>();
 
 // Broad annotations erase leaf signatures but must not trigger recursive instantiation.
 /** A spec of unknown shape. */

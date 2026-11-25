@@ -2,8 +2,17 @@ import { recordFailure } from './failure.js';
 import { defineValue, emptyLike, fulfilled, isContainer, onAbort, ownEnumerableKeys, rejected, toSegment, type Key } from './internal.js';
 import type { DeepAwaited, DeepSettled, SignalOption } from './types.js';
 
-/** `'all'` rethrows the first rejection; `'settled'` turns each promise into a `PromiseSettledResult`. */
+/** `'all'` rethrows the first rejection; `'settled'` turns each promise into a `Settled` result. */
 type Mode = 'all' | 'settled';
+/** What one call's walk needs at every depth. */
+interface Context {
+  /** How promises are resolved. */
+  readonly mode: Mode;
+  /** The caller's signal. Once it aborts, the walk reads nothing more. */
+  readonly signal: AbortSignal | undefined;
+  /** Containers already scanned by {@link observe}, so each is scanned once. */
+  readonly seen: Set<object>;
+}
 /** The location being walked, or `undefined` once it passes through a symbol key and can't be reported. */
 type Path = readonly Key[] | undefined;
 /** The result of reading `then` once: not thenable, a callable `then`, or the getter's error. */
@@ -23,6 +32,7 @@ function readThen(value: unknown): ThenRead {
   try {
     /** The `then` property, read exactly once: a getter may change its answer or throw on a second read. */
     const then: unknown = (value as { then?: unknown }).then;
+    // Stryker disable next-line StringLiteral: equivalent. Callers compare `kind` only with 'none' and 'error'.
     return typeof then === 'function' ? { kind: 'then', then: then as (this: unknown, ...args: unknown[]) => unknown } : { kind: 'none' };
   } catch (error) {
     return { kind: 'error', error };
@@ -37,16 +47,55 @@ function readThen(value: unknown): ThenRead {
  */
 const isPromise = (value: unknown): value is Promise<unknown> => value instanceof Promise;
 
+/** Does nothing. Attached as a rejection handler so a promise counts as handled. */
+const ignore = (): void => {};
+
+/**
+ * After an abort, gives every native promise still reachable through data properties a handler, so none is
+ * reported as unhandled. Runs no getter and calls no custom `then`.
+ *
+ * @param value - What the walk would have read next.
+ * @param seen - Containers already scanned.
+ */
+function observe(value: unknown, seen: Set<object>): void {
+  if (value instanceof Promise) {
+    void Promise.prototype.then.call(value, undefined, ignore);
+    return;
+  }
+  if (!isContainer(value) || seen.has(value)) return;
+  seen.add(value);
+  /** Every own property's descriptor, read without running a getter. */
+  const descriptors: Record<PropertyKey, PropertyDescriptor> = Object.getOwnPropertyDescriptors(value);
+  for (const key of Reflect.ownKeys(descriptors)) {
+    /** The property's value; `undefined` for an accessor, whose getter is never run. */
+    const item: unknown = (descriptors[key] as PropertyDescriptor).value;
+    observe(item, seen);
+  }
+}
+
+/**
+ * Ends the walk at `value` after an abort: observes what is left there and returns the abort as a rejection.
+ *
+ * @param value - What the walk would have read next.
+ * @param context - The walk's context; its signal has aborted.
+ * @param signal - The aborted signal.
+ * @returns A rejection with the signal's reason. The caller's result has already rejected with it.
+ */
+const stopped = (value: unknown, context: Context, signal: AbortSignal): Promise<never> => {
+  observe(value, context.seen);
+  return Promise.reject(signal.reason as unknown);
+};
+
 /**
  * Reads and walks one child. A throwing getter or a cycle becomes a rejection, so siblings stay handled.
  *
  * @param read - Reads the child from its parent; may run a getter.
  * @param ancestors - The containers above the child, for cycle detection.
  * @param path - The child's location, for {@link recordFailure}.
- * @param mode - How promises are resolved.
+ * @param context - The walk's mode, signal and scanned containers.
  * @returns The walked child: a plain value, or a promise when something below is asynchronous.
  */
-function child(read: () => unknown, ancestors: readonly object[], path: Path, mode: Mode): unknown {
+function child(read: () => unknown, ancestors: readonly object[], path: Path, context: Context): unknown {
   /** The child, assigned inside `try` so a throwing getter is caught and recorded. */
   let value: unknown;
   try {
@@ -56,7 +105,7 @@ function child(read: () => unknown, ancestors: readonly object[], path: Path, mo
     return Promise.reject(error);
   }
   try {
-    return walk(value, ancestors, path, mode);
+    return walk(value, ancestors, path, context);
   } catch (error) {
     return Promise.reject(error);
   }
@@ -69,11 +118,14 @@ function child(read: () => unknown, ancestors: readonly object[], path: Path, mo
  * @param value - The value to walk.
  * @param ancestors - The containers above `value`, for cycle detection.
  * @param path - The location of `value`, for {@link recordFailure}.
- * @param mode - How promises are resolved.
+ * @param context - The walk's mode, signal and scanned containers.
  * @returns The resolved copy, or a promise of it.
  * @throws `TypeError` synchronously when `value` is one of its own ancestors.
  */
-function walk(value: unknown, ancestors: readonly object[], path: Path, mode: Mode): unknown {
+function walk(value: unknown, ancestors: readonly object[], path: Path, context: Context): unknown {
+  /** The caller's signal; checked before anything is read. */
+  const { mode, signal } = context;
+  if (signal?.aborted) return stopped(value, context, signal);
   /** Whether `value` is thenable, decided by a single read of `then`. */
   const read = readThen(value);
   if (read.kind !== 'none') {
@@ -83,7 +135,7 @@ function walk(value: unknown, ancestors: readonly object[], path: Path, mode: Mo
       : Promise.resolve({ then: (resolve: (r: unknown) => void, reject: (e: unknown) => void): void => { read.then.call(value, resolve, reject); } });
     // Only the promise's own rejection is settled; invalid structure underneath still rejects.
     return promise.then(
-      resolved => mode === 'all' ? walk(resolved, ancestors, path, mode) : Promise.resolve(walk(resolved, ancestors, path, mode)).then(fulfilled),
+      resolved => mode === 'all' ? walk(resolved, ancestors, path, context) : Promise.resolve(walk(resolved, ancestors, path, context)).then(fulfilled),
       (reason: unknown) => {
         recordFailure(reason, path);
         if (mode === 'settled') return rejected(reason);
@@ -97,22 +149,30 @@ function walk(value: unknown, ancestors: readonly object[], path: Path, mode: Mo
   const chain = [...ancestors, value];
   /** The keys to copy, fixed now so the result's key order matches the input's. */
   const keys = ownEnumerableKeys(value);
+  /** A fresh container of the same kind, prototype and length, made now so later changes to the input can't reach it. */
+  const output = emptyLike(value);
   /** Each child walked, in key order: plain values where possible, promises where something below is pending. */
-  const values = keys.map(key => child(
-    () => (value as Record<PropertyKey, unknown>)[key],
-    chain,
-    path !== undefined && typeof key === 'string' ? [...path, toSegment(value, key)] : undefined,
-    mode,
-  ));
+  const values: unknown[] = [];
+  for (const key of keys) {
+    // A getter may abort the signal; stop before reading the next key.
+    if (signal?.aborted) {
+      values.push(stopped(value, context, signal));
+      break;
+    }
+    values.push(child(
+      () => (value as Record<PropertyKey, unknown>)[key],
+      chain,
+      path !== undefined && typeof key === 'string' ? [...path, toSegment(value, key)] : undefined,
+      context,
+    ));
+  }
   /**
-   * Copies the container with each key's resolved value, in the original key order.
+   * Fills the output with each key's resolved value, in the original key order.
    *
    * @param resolved - The children's values, in key order.
-   * @returns The copy.
+   * @returns The output.
    */
   const build = (resolved: readonly unknown[]): object => {
-    /** A fresh container of the same kind and prototype, filled below. */
-    const output = emptyLike(value);
     keys.forEach((key, index) => { defineValue(output, key, resolved[index]); });
     return output;
   };
@@ -120,7 +180,8 @@ function walk(value: unknown, ancestors: readonly object[], path: Path, mode: Mo
 }
 
 /**
- * Runs {@link walk} for {@link allDeep} and {@link allSettledDeep}, racing it against the abort signal.
+ * Runs {@link walk} for {@link allDeep} and {@link allSettledDeep}, racing it against the abort signal. The walk starts
+ * during the call, so the input is read as it is then.
  *
  * @typeParam R - The declared result type.
  * @param value - The input to resolve.
@@ -133,13 +194,17 @@ function run<R>(value: unknown, mode: Mode, options: SignalOption | undefined): 
   const signal = options?.signal;
   /** The result promise, settled by whichever finishes first: the walk or the abort. */
   const { promise, resolve, reject } = Promise.withResolvers<R>();
-  // Even when already aborted, the walk still runs so rejections inside `value` are observed, not left unhandled.
-  if (signal?.aborted) reject(signal.reason);
-  /** Removes the abort listener once the walk settles, so a long-lived signal doesn't keep this call alive. */
-  const stop = onAbort(signal, () => { reject(signal?.reason); });
-  Promise.resolve()
-    .then(() => walk(value, [], [], mode))
-    .then(result => { stop(); resolve(result as R); }, (error: unknown) => { stop(); reject(error); });
+  /** Removes the abort listener once the walk settles, so a long-lived signal doesn't keep this call alive. An already-aborted signal never fires; the walk rejects with its reason instead. */
+  const stop = onAbort(signal, reject);
+  /** The walk's result: a plain value, or a promise when something is pending. An already-aborted walk only observes. */
+  let walked: unknown;
+  try {
+    // Stryker disable next-line ArrayDeclaration: equivalent. Ancestors are only compared with containers.
+    walked = walk(value, [], [], { mode, signal, seen: new Set() });
+  } catch (error) {
+    walked = Promise.reject(error);
+  }
+  Promise.resolve(walked).then(result => { stop(); resolve(result as R); }, (error: unknown) => { stop(); reject(error); });
   return promise;
 }
 

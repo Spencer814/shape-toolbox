@@ -1,13 +1,14 @@
 import { defineValue, isObjectLike } from './internal.js';
+import type { Settled } from './types.js';
 
-/** Catches `allKeyed(new Map())` and `allKeyed(promise)` at compile time; neither has own keys to await. */
+/** Catches `allKeyed(new Map())` and `allKeyed(promise)` at compile time; neither has own keys to await. The runtime rejects them too. */
 type NotKeyable<T> = T extends ReadonlyMap<unknown, unknown> | ReadonlySet<unknown> | PromiseLike<unknown> ? never : unknown;
 /** The keys {@link allKeyed} keeps: own keys of an object, or index and extra keys of an array, never array methods. */
 type KeyedKeys<T> = T extends readonly unknown[] ? Exclude<keyof T, keyof unknown[]> | Extract<keyof T, number> : keyof T;
 /** The type {@link allKeyed} resolves to: each own property of `T` awaited, one level deep. */
 export type Keyed<T> = { -readonly [K in keyof T as K extends KeyedKeys<T> ? K : never]: Awaited<T[K]> };
-/** The type {@link allSettledKeyed} resolves to: each own property of `T` as a `PromiseSettledResult`. */
-export type KeyedSettled<T> = { -readonly [K in keyof T as K extends KeyedKeys<T> ? K : never]: PromiseSettledResult<Awaited<T[K]>> };
+/** The type {@link allSettledKeyed} resolves to: each own property of `T` as a {@link Settled} result. */
+export type KeyedSettled<T> = { -readonly [K in keyof T as K extends KeyedKeys<T> ? K : never]: Settled<Awaited<T[K]>> };
 
 /**
  * Marks a rejection as handled; the real handling happens in `combine`.
@@ -34,6 +35,9 @@ function collect<R>(name: string, obj: unknown, combine: (values: readonly Promi
   const values: Promise<unknown>[] = [];
   try {
     if (!isObjectLike(obj)) throw new TypeError(`${name} expects an object`);
+    if (obj instanceof Map || obj instanceof Set || obj instanceof Promise || typeof (obj as { then?: unknown }).then === 'function') {
+      throw new TypeError(`${name} reads own properties, so it does not accept a Map, Set or promise`);
+    }
     for (const key of Reflect.ownKeys(obj)) {
       if (!Object.prototype.propertyIsEnumerable.call(obj, key)) continue;
       /** The property's value as a promise, so plain values and thenables are awaited the same way. */
@@ -66,7 +70,7 @@ function collect<R>(name: string, obj: unknown, combine: (values: readonly Promi
  * @param obj - Any object, including arrays and functions. Maps, Sets and promises are compile errors, since they have
  * no own keys to await.
  * @returns A promise of a null-prototype object with the same keys and awaited values.
- * @throws `TypeError`, as a rejection, when `obj` is not an object.
+ * @throws `TypeError`, as a rejection, when `obj` is not an object, or is a Map, Set, promise or other thenable.
  * @throws The first rejection reason or getter error, unchanged, as a rejection.
  *
  * @example
@@ -92,7 +96,7 @@ export function allKeyed<const T extends object>(obj: T & NotKeyable<T>): Promis
  * @typeParam T - The input object. The result type is {@link KeyedSettled}.
  * @param obj - Any object, including arrays and functions.
  * @returns A promise of a null-prototype object with a settled result under each key.
- * @throws `TypeError`, as a rejection, when `obj` is not an object; a getter's error, as a rejection.
+ * @throws `TypeError`, as a rejection, when `obj` is not an object, or is a Map, Set, promise or other thenable; a getter's error, as a rejection.
  *
  * @example
  * ```ts

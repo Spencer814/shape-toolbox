@@ -1,8 +1,8 @@
+import type { Settled } from './types.js';
+
 /** A property name or numeric array index. */
 export type Key = string | number;
 
-/** A canonical non-negative integer string, with no leading zeros. */
-export const INDEX: RegExp = /^(?:0|[1-9]\d*)$/;
 
 /**
  * True for anything that can hold properties: objects and functions.
@@ -44,12 +44,24 @@ export const ownEnumerableKeys = (value: object): (string | symbol)[] =>
   Reflect.ownKeys(value).filter(key => Object.prototype.propertyIsEnumerable.call(value, key));
 
 /**
+ * Whether a string is the canonical form of an integer: `'0'`, `'12'` or `'-1'`, but not `'01'`, `'-0'` or `'1e3'`.
+ *
+ * @param key - A path segment or property name.
+ * @returns Whether `Number(key)` is an integer that prints back as `key`.
+ */
+export const isIntegerKey = (key: string): boolean => {
+  /** The key as a number. */
+  const number = Number(key);
+  return Number.isInteger(number) && String(number) === key;
+};
+
+/**
  * True for canonical array index strings: `'0'`, `'12'`, not `'01'` or a number past `Number.MAX_SAFE_INTEGER`.
  *
  * @param key - A property key.
  * @returns Whether it names an array index.
  */
-export const isIndexKey = (key: string): boolean => INDEX.test(key) && String(Number(key)) === key;
+export const isIndexKey = (key: string): boolean => isIntegerKey(key) && !key.startsWith('-');
 
 /**
  * Turns an array's index key into a number, so failure paths read `['items', 0]`.
@@ -85,17 +97,20 @@ export const emptyLike = (source: object): object =>
  * Runs `handler` once when the signal aborts.
  *
  * @param signal - The signal, or `undefined` for none.
- * @param handler - Called on abort.
+ * @param handler - Called on abort with the signal's reason.
  * @returns A function that removes the listener.
  */
-export const onAbort = (signal: AbortSignal | undefined, handler: () => void): (() => void) => {
+export const onAbort = (signal: AbortSignal | undefined, handler: (reason: unknown) => void): (() => void) => {
   if (signal === undefined) return () => undefined;
-  signal.addEventListener('abort', handler, { once: true });
-  return () => { signal.removeEventListener('abort', handler); };
+  /** Passes the signal's reason to `handler`. */
+  const listener = (): void => { handler(signal.reason); };
+  // Stryker disable next-line ObjectLiteral,BooleanLiteral: equivalent. Every caller removes the listener when it settles; `once` only frees it sooner when the work never settles.
+  signal.addEventListener('abort', listener, { once: true });
+  return () => { signal.removeEventListener('abort', listener); };
 };
 
 /**
- * Builds a fulfilled `PromiseSettledResult`.
+ * Builds a fulfilled `Settled` result.
  *
  * @typeParam T - The value type.
  * @param value - The value.
@@ -103,9 +118,9 @@ export const onAbort = (signal: AbortSignal | undefined, handler: () => void): (
  */
 export const fulfilled = <T>(value: T): PromiseFulfilledResult<T> => ({ status: 'fulfilled', value });
 /**
- * Builds a rejected `PromiseSettledResult`.
+ * Builds a rejected `Settled` result.
  *
  * @param reason - The rejection reason.
  * @returns `{ status: 'rejected', reason }`.
  */
-export const rejected = (reason: unknown): PromiseRejectedResult => ({ status: 'rejected', reason });
+export const rejected = (reason: unknown): Settled<never> => ({ status: 'rejected', reason });

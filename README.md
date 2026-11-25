@@ -4,6 +4,8 @@ Read and update nested data, resolve nested promises, and compose asynchronous s
 
 ESM only. Requires Node.js 26 or newer. TypeScript declarations are included.
 
+Not yet published to npm; the install command below works once the first version is released.
+
 ## Install
 
 ```sh
@@ -115,20 +117,21 @@ try {
 | `applySpecAsync(spec, { concurrency, signal, mode }?)` | Create a function that executes a nested specification. |
 | `failedPath(error)` | Retrieve a deep, specification, or mapper failure path without wrapping its error. |
 
-The public type helpers are `DeepAwaited`, `DeepSettled`, `Spec`, `SpecArgs`, `SpecResult`, and `SpecSettled`. See the [async API guide](docs/api.md), [path guide](docs/paths.md), and [recipes](docs/recipes.md).
+The public type helpers are `DeepAwaited`, `DeepSettled`, `Settled`, `Spec`, `SpecArgs`, `SpecResult`, and `SpecSettled`. See the [async API guide](docs/api.md), [path guide](docs/paths.md), and [recipes](docs/recipes.md).
 
 ## Behavior
 
 - Deep traversal visits plain objects and arrays. Class instances, dates, maps, sets, and other non-plain values remain unchanged.
 - Cycles reject with a `TypeError`, including cycles through resolved promises. Shared references without a cycle are allowed.
-- `allKeyed` and `allSettledKeyed` are shallow. They follow the proposal's own-enumerable-key behavior, including symbol keys, and do not delegate to native keyed methods.
+- `allKeyed` and `allSettledKeyed` are shallow. They follow the proposal's own-enumerable-key behavior, including symbol keys, and do not delegate to native keyed methods. A Map, Set, promise or other thenable is a compile error and, from untyped code, a `TypeError` rejection.
 - `applySpecAsync` reads and validates the specification once, when it is called, and throws a `TypeError` naming the path of any invalid leaf or cycle. Later changes to the specification object do not affect the returned function.
 - `signal` in `applySpecAsync` options may be a factory, such as `() => AbortSignal.timeout(5_000)`, to give each call its own deadline.
 - `applySpecAsync` accepts functions at leaves. Nested arrays stay arrays. Specification keys must be strings or array indices; enumerable symbol keys are rejected. It does not curry arguments or add an argument to leaf calls.
-- The default specification mode, `'all'`, rejects on the first observed failure. The `'settled'` mode returns `PromiseSettledResult` at every function leaf.
+- The default specification mode, `'all'`, rejects on the first observed failure. The `'settled'` mode returns a `Settled` result at every function leaf.
 - `failedPath` records deep-helper, specification, and mapper failures using string keys and numeric array indices. Failures beneath symbol keys have no recorded path.
-- No export returns `any`. Untyped (`any`) input reads as `unknown`, so it cannot spread into calling code.
+- No export returns `any`. Untyped (`any`) input reads as `unknown`, so it cannot spread into calling code. Settled results use the package's `Settled` type, whose rejection `reason` is `unknown`; TypeScript's own `PromiseSettledResult` types it as `any`.
 - Abort rejects with the signal's reason and prevents queued work from starting. Already-running I/O stops only if it cooperates with cancellation. `mapLimit` supplies its mapper with a signal.
+- `allDeep` and `allSettledDeep` read the input during the call. Changes made to it afterwards don't affect the result. After an abort they read nothing more: no getter runs and no custom `then` is called. Native promises they can still reach through data properties get a handler, so none is reported as unhandled.
 - Already-created promises are already running. `allDeep` cannot limit their concurrency; use `mapLimit` or `applySpecAsync` to control when work starts.
 - TypeScript cannot generally distinguish a class instance from a plain object structurally. Deep types may describe promise properties of a class as awaited even though runtime traversal leaves the instance unchanged.
 
@@ -143,12 +146,13 @@ See the [complete 28-export migration table](docs/migration.md), including argum
 ```sh
 npm ci
 npm run build
-npm test               # unit, type and property tests in Node
-npm run test:browser   # the same runtime tests in Chromium, Firefox and WebKit
-npm run test:mutation  # Stryker: how many deliberately broken versions the tests catch
-npm run check          # everything CI runs on each push
+npm test               # unit and property tests in Node
+npm run typecheck      # type tests (test/types.ts, test/path.types.ts) and the examples
+npm run test:browser   # runtime tests in Chromium, Firefox and WebKit, except the five that need Node APIs
+npm run test:mutation  # Stryker: fails below an 85% mutation score
+npm run check          # build, typecheck, lint, coverage, docs, package, size and consumer checks
 ```
 
-`test:browser` needs the Playwright browsers once: `npx playwright install chromium firefox webkit`. Every exported and internal declaration carries JSDoc, enforced by `eslint-plugin-jsdoc`, and every `@example` is typechecked by `npm run docs:check`.
+`test:browser` needs the Playwright browsers once: `npx playwright install chromium firefox webkit`. CI runs `check` and `test:browser` on every push, types on TypeScript 5.9.3, 6.0.3 and 7.0.2, and mutation testing weekly. Every exported and internal declaration carries JSDoc, enforced by `eslint-plugin-jsdoc`, and every `@example` is typechecked by `npm run docs:check`.
 
 MIT licensed.

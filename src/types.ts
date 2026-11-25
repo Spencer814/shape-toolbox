@@ -30,7 +30,31 @@ export type Atomic =
 export type DeepAwaited<T> = IsAny<T> extends true ? unknown : T extends PromiseLike<infer U> ? DeepAwaited<U> : T extends Atomic ? T : T extends object ? { -readonly [K in keyof T]: DeepAwaited<T[K]> } : T;
 
 /**
- * The type {@link allSettledDeep} resolves to: each promise becomes a `PromiseSettledResult` in place.
+ * A settled result, as `Promise.allSettled` gives, but with the rejection `reason` typed `unknown` instead of `any`.
+ *
+ * @remarks
+ * TypeScript's own `PromiseSettledResult` types `reason` as `any`, which would let it spread into calling code. Narrow
+ * `reason` before using it, as you would a caught error.
+ *
+ * @typeParam T - The fulfilled value's type.
+ *
+ * @example
+ * ```ts
+ * import type { Settled } from 'shape-toolbox';
+ *
+ * const result: Settled<number> = { status: 'rejected', reason: new Error('timeout') };
+ * if (result.status === 'rejected' && result.reason instanceof Error) console.log(result.reason.message);
+ * ```
+ */
+export type Settled<T> = PromiseFulfilledResult<T> | {
+  /** Always `'rejected'`. */
+  status: 'rejected';
+  /** Why it failed. Anything can be thrown, so narrow it before use. */
+  reason: unknown;
+};
+
+/**
+ * The type {@link allSettledDeep} resolves to: each promise becomes a {@link Settled} result in place.
  *
  * @remarks
  * Plain values stay as they are. A fulfilled value is itself settled recursively, so a promise of an object holding
@@ -47,7 +71,7 @@ export type DeepAwaited<T> = IsAny<T> extends true ? unknown : T extends Promise
  * void checks;
  * ```
  */
-export type DeepSettled<T> = IsAny<T> extends true ? unknown : T extends PromiseLike<infer U> ? PromiseSettledResult<DeepSettled<Awaited<U>>> : T extends Atomic ? T : T extends object ? { -readonly [K in keyof T]: DeepSettled<T[K]> } : T;
+export type DeepSettled<T> = IsAny<T> extends true ? unknown : T extends PromiseLike<infer U> ? Settled<DeepSettled<Awaited<U>>> : T extends Atomic ? T : T extends object ? { -readonly [K in keyof T]: DeepSettled<T[K]> } : T;
 
 /** Cancellation option accepted by {@link allDeep} and {@link allSettledDeep}. */
 export interface SignalOption {
@@ -55,8 +79,9 @@ export interface SignalOption {
    * Rejects the result with `signal.reason` as soon as it aborts, including when it is already aborted.
    *
    * @remarks
-   * Work that already started keeps running unless it listens to the same signal. Rejections inside the input are
-   * still observed after an abort, so none is reported as unhandled.
+   * Work that already started keeps running unless it listens to the same signal. After an abort the walk reads
+   * nothing more: no getter runs, no custom `then` is called, and resolved values are not followed. Native promises it
+   * can still reach through data properties get a handler, so none is reported as unhandled.
    * @defaultValue `undefined` (no cancellation)
    */
   readonly signal?: AbortSignal | undefined;
@@ -160,11 +185,11 @@ export type SpecArgs<S> = [ParametersOf<Leaves<S>>] extends [never] ? [] : true 
 export type SpecResult<S> = Same<S, Spec> extends true ? unknown : S extends AnyFunction ? Awaited<ReturnType<S>> : { -readonly [K in keyof S]: SpecResult<S[K]> };
 
 /**
- * What {@link applySpecAsync} resolves to in `'settled'` mode: each leaf replaced by a `PromiseSettledResult`.
+ * What {@link applySpecAsync} resolves to in `'settled'` mode: each leaf replaced by a {@link Settled} result.
  *
  * @typeParam S - The spec type.
  */
-export type SpecSettled<S> = Same<S, Spec> extends true ? unknown : S extends AnyFunction ? PromiseSettledResult<Awaited<ReturnType<S>>> : { -readonly [K in keyof S]: SpecSettled<S[K]> };
+export type SpecSettled<S> = Same<S, Spec> extends true ? unknown : S extends AnyFunction ? Settled<Awaited<ReturnType<S>>> : { -readonly [K in keyof S]: SpecSettled<S[K]> };
 
 /** Options for {@link applySpecAsync}. */
 export interface SpecOptions {
@@ -187,7 +212,7 @@ export interface SpecOptions {
   readonly signal?: AbortSignal | (() => AbortSignal) | undefined;
   /**
    * `'all'` rejects on the first failing leaf with its error, unchanged. `'settled'` never rejects for a leaf and puts
-   * a `PromiseSettledResult` at each leaf's position.
+   * a {@link Settled} result at each leaf's position.
    *
    * @defaultValue `'all'`
    */

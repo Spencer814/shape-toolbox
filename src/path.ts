@@ -2,12 +2,10 @@ import type {
   CheckEq, CheckPath, CheckRead, CheckSet, CheckWritePath, HasOptionalParent,
   Key, Narrow, PathFor, PathInput, PathLens, PathTuple, PathValue, SlotValue, ToTuple, WriteOutput,
 } from './path-types.js';
-import { emptyLike, isIndexKey, isObjectLike } from './internal.js';
+import { emptyLike, isIndexKey, isIntegerKey, isObjectLike } from './internal.js';
 
 export type { HasPath, PathInput, PathLens, PathTuple, PathValue, SlotValue } from './path-types.js';
 
-/** A dot-path segment that becomes a number: an integer, possibly negative, with no leading zeros. */
-const integer = /^(?:0|-?[1-9]\d*)$/;
 /** Keys a write refuses, because writing them could change a prototype. */
 const unsafe = new Set<Key>(['__proto__', 'constructor', 'prototype']);
 /**
@@ -31,9 +29,9 @@ function toPath(path: unknown): PathTuple {
   const input: unknown = isObjectLike(path) && !Array.isArray(path) ? (path as { path?: unknown }).path : path;
   /** The segments: a dot string split with integer segments as numbers, a number wrapped, or a tuple copied. Anything else becomes `[undefined]` so the check below rejects it. */
   const parts: unknown[] = typeof input === 'string'
-    ? input === '' ? [] : input.split('.').map(key => integer.test(key) && String(Number(key)) === key ? Number(key) : key)
+    ? input === '' ? [] : input.split('.').map(key => isIntegerKey(key) ? Number(key) : key)
     : typeof input === 'number' ? [input] : Array.isArray(input) ? [...(input as readonly unknown[])] : [undefined];
-  if (!parts.every(key => typeof key === 'string' || (typeof key === 'number' && Number.isFinite(key)))) {
+  if (!parts.every(key => typeof key === 'string' || Number.isFinite(key))) {
     throw new TypeError('path must be a string, number, or tuple of keys');
   }
   return Object.freeze(parts) as PathTuple;
@@ -52,7 +50,7 @@ function read(value: unknown, key: Key): unknown {
     if (!Number.isInteger(key)) return undefined;
     /** The index from the start; negative indexes count back from the end. */
     const index = key < 0 ? value.length + key : key;
-    return index < 0 || index >= value.length ? undefined : value[index];
+    return index < 0 ? undefined : value[index];
   }
   return (value as Record<Key, unknown>)[key];
 }
@@ -113,17 +111,19 @@ function write(value: unknown, path: PathTuple, at: number, replacement: unknown
   /** The key to write at this depth; an index string becomes a number when the parent is an array. */
   let key = path[at] as Key;
   if (array) {
+    // Stryker disable next-line ConditionalExpression: equivalent. isIndexKey is false for numbers; the check is for the types.
     if (typeof key === 'string' && isIndexKey(key)) key = Number(key);
     if (typeof key === 'number') {
       if (!Number.isInteger(key)) throw new TypeError(`array writes require an integer index at ${where(path, at)}`);
       key = key < 0 ? value.length + key : key;
       if (key < 0 || key > value.length) throw new RangeError(`index out of range at ${where(path, at)}`);
-    } else if (key === 'length' || key in Array.prototype) {
+    } else if (key in Array.prototype) {
       throw new TypeError(`array writes require an integer index or custom property at ${where(path, at)}`);
     }
   }
   /** Whether the key is already an own property; only the last segment may be new. */
   const exists = own(value, key);
+  // Stryker disable next-line ConditionalExpression: equivalent. The next depth throws the same error; this check names the gap where it is found.
   if (at + 1 < path.length && !exists) throw new TypeError(`missing parent ${where(path, at)}; set the parent instead`);
   /** The current value at this key, or `undefined` when it is new. */
   const child: unknown = exists ? (value as Record<Key, unknown>)[key] : undefined;

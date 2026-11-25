@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { allDeep, allSettledDeep, failedPath } from '../src/index.js';
 
 /**
@@ -285,5 +285,175 @@ describe('allSettledDeep', () => {
     viaPromise.p = Promise.resolve(viaPromise);
     await expect(allSettledDeep(viaPromise)).rejects.toThrow(TypeError);
     await expect(allSettledDeep({ a: 1 }, { signal: AbortSignal.abort(new Error('pre')) })).rejects.toThrow('pre');
+  });
+});
+
+describe('deep helpers read the input at the call', () => {
+  for (const helper of [allDeep, allSettledDeep]) {
+    it(`${helper.name} ignores changes made to an array while the call is pending`, async () => {
+      /** An array whose second element is still pending. */
+      const list: unknown[] = [1, delay(5, 2)];
+      /** The pending call, made before the array changes. */
+      const pending = helper(list);
+      list.push(3);
+      list[0] = 'swapped';
+      /** The result, which must match the array as it was at the call. */
+      const out = (await pending) as unknown[];
+      expect(out).toHaveLength(2);
+      expect(out[0]).toBe(1);
+    });
+    it(`${helper.name} keeps the prototype it saw at the call`, async () => {
+      /** A null-prototype source with a pending value. */
+      const source = Object.assign(Object.create(null) as Record<string, unknown>, { a: delay(5, 1) });
+      /** The pending call, made before the prototype changes. */
+      const pending = helper(source);
+      Object.setPrototypeOf(source, { extra: true });
+      expect(Object.getPrototypeOf(await pending)).toBeNull();
+    });
+  }
+  it('rejects, not throws, when listing the input keys throws', async () => {
+    /** The error the key listing throws. */
+    const error = new Error('keys');
+    /** A plain-looking object whose keys cannot be listed. */
+    const input = new Proxy({}, { ownKeys(): never { throw error; } });
+    /** The call, which must not throw synchronously. */
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = allDeep(input);
+    }).not.toThrow();
+    await expect(pending).rejects.toBe(error);
+  });
+});
+
+describe('deep helpers after an abort', () => {
+  for (const helper of [allDeep, allSettledDeep]) {
+    it(`${helper.name} reads nothing when the signal is already aborted, and leaves nothing unhandled`, async () => {
+      /** The abort reason. */
+      const reason = new Error('pre');
+      /** How many getters and custom `then` methods ran. */
+      let calls = 0;
+      /** An input with a getter, a custom thenable, a hidden value and rejected promises. */
+      const input = Object.defineProperty({
+        get lazy(): number {
+          calls++;
+          return 1;
+        },
+        thenable: {
+          then(resolve: (value: number) => void): void {
+            calls++;
+            resolve(1);
+          },
+        },
+        failed: Promise.reject(new Error('inside')),
+        nested: [Promise.reject(new Error('deeper'))],
+      }, 'then', {
+        get(): undefined {
+          calls++;
+          return undefined;
+        },
+      });
+      Object.defineProperty(input, 'hidden', { value: 1 });
+      await expect(helper(input, { signal: AbortSignal.abort(reason) })).rejects.toBe(reason);
+      await delay(20, undefined);
+      expect(calls).toBe(0);
+      expect(unhandled).toEqual([]);
+    });
+    it(`${helper.name} stops reading once the signal aborts during the walk`, async () => {
+      /** Aborted by a getter part-way through the walk. */
+      const controller = new AbortController();
+      /** The abort reason. */
+      const reason = new Error('mid');
+      /** How many getters ran after the abort. */
+      let late = 0;
+      /** Resolves the first value once the call has rejected. */
+      let release: (value: unknown) => void = () => {};
+      /** An input whose second branch aborts the signal while it is read. */
+      const input = {
+        first: new Promise((resolve) => {
+          release = resolve;
+        }),
+        second: {
+          get stop(): number {
+            controller.abort(reason);
+            return 1;
+          },
+          get sibling(): number {
+            late++;
+            return 2;
+          },
+          after: Promise.reject(new Error('after')),
+        },
+        third: {
+          get never(): number {
+            late++;
+            return 2;
+          },
+        },
+      };
+      await expect(helper(input, { signal: controller.signal })).rejects.toBe(reason);
+      release({
+        get resolvedGetter(): number {
+          late++;
+          return 3;
+        },
+      });
+      await delay(20, undefined);
+      expect(late).toBe(0);
+      expect(unhandled).toEqual([]);
+    });
+  }
+});
+
+describe('deep helpers: contracts the mutation run found unpinned', () => {
+  for (const helper of [allDeep, allSettledDeep]) {
+    it(`${helper.name} scans a shared container once after an abort`, async () => {
+      /** How many times the shared container's keys were listed. */
+      let scans = 0;
+      /** A container reachable twice, which counts each listing of its keys. */
+      const shared = new Proxy({ p: 1 }, {
+        ownKeys(target): (string | symbol)[] {
+          scans++;
+          return Reflect.ownKeys(target);
+        },
+      });
+      await expect(helper({ a: shared, b: shared }, { signal: AbortSignal.abort(new Error('stop')) })).rejects.toThrow('stop');
+      expect(scans).toBe(1);
+    });
+    it(`${helper.name} removes its abort listener once the call settles, whether it resolves or rejects`, async () => {
+      /** A structure that rejects with a cycle. */
+      const cyclic: Record<string, unknown> = {};
+      cyclic.self = cyclic;
+      for (const input of [{ a: Promise.resolve(1) }, cyclic]) {
+        /** A signal that never aborts. */
+        const signal = new AbortController().signal;
+        /** Watches the listener being removed. */
+        const remove = vi.spyOn(signal, 'removeEventListener');
+        await helper(input, { signal }).catch(() => undefined);
+        expect(remove).toHaveBeenCalledTimes(1);
+        expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
+      }
+    });
+  }
+  it('resolves a function that is also thenable', async () => {
+    /** A function with a `then` method. */
+    const fn = Object.assign(() => 1, {
+      then(resolve: (value: number) => void): void {
+        resolve(4);
+      },
+    });
+    expect(await allDeep({ fn })).toEqual({ fn: 4 });
+  });
+  it('records number-like object keys as strings and array indexes as numbers', async () => {
+    /** The rejection under an object key that looks like a number. */
+    const objectError = await allDeep({ '1': Promise.reject(new Error('object')) }).catch((e: unknown) => e);
+    expect(failedPath(objectError)).toEqual(['1']);
+    /** The rejection at a two-digit array index. */
+    const arrayError = await allDeep(Array.from({ length: 13 }, (_, i) => i === 12 ? Promise.reject(new Error('array')) : i)).catch((e: unknown) => e);
+    expect(failedPath(arrayError)).toEqual([12]);
+  });
+  it('returns ordinary writable, configurable properties', async () => {
+    /** The resolved copy. */
+    const out = await allDeep({ a: Promise.resolve(1) });
+    expect(Object.getOwnPropertyDescriptor(out, 'a')).toEqual({ value: 1, writable: true, enumerable: true, configurable: true });
   });
 });

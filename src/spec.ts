@@ -57,6 +57,7 @@ function compile(spec: unknown): Compiled {
     return { length: Array.isArray(node) ? node.length : undefined, prototype: Object.getPrototypeOf(node) as object | null, entries };
   };
   if (!isContainer(spec)) throw new TypeError('applySpecAsync expects an object or array spec');
+  // Stryker disable next-line ArrayDeclaration: equivalent. Ancestors are only compared with containers.
   return { shape: visit(spec, [], []), leaves };
 }
 
@@ -115,7 +116,7 @@ function materialize(shape: Shape, results: readonly unknown[]): unknown {
  */
 export function applySpecAsync<const S extends object>(spec: S & CompatibleSpec<NoInfer<S>>, options?: SpecOptions & { readonly mode?: 'all' | undefined }): (...args: SpecArgs<S>) => Promise<SpecResult<S>>;
 /**
- * The settled form of {@link applySpecAsync}: every leaf runs and its position holds a `PromiseSettledResult`.
+ * The settled form of {@link applySpecAsync}: every leaf runs and its position holds a {@link Settled} result.
  *
  * @remarks A failing leaf never rejects the call, but still records its path for {@link failedPath}.
  *

@@ -2,17 +2,19 @@
   {
     "name": "Async helpers",
     "path": "dist/async.js",
-    "limit": "2 kB",
+    "limit": "2.4 kB",
     "gzip": true
   },
   {
     "name": "Path helpers",
     "path": "dist/path.js",
+    "limit": "1.7 kB",
     "gzip": true
   },
   {
     "name": "Complete toolbox",
     "path": "dist/index.js",
+    "limit": "3.7 kB",
     "gzip": true
   }
 ]

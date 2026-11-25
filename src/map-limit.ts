@@ -59,7 +59,7 @@ export function mapLimit<T, R>(
   /** The result promise, settled by {@link fail} or when the last item finishes. */
   const { promise, resolve, reject } = Promise.withResolvers<Awaited<R>[]>();
   /** Results by input index, filled as calls finish in any order. */
-  const output = new Array<Awaited<R>>(input.length);
+  const output: Awaited<R>[] = [];
   /** The index of the next item to start. */
   let next = 0;
   /** How many calls have finished successfully. */
@@ -67,7 +67,7 @@ export function mapLimit<T, R>(
   /** Set once the result has settled; late results and failures are ignored after it. */
   let finished = false;
   /** Removes the listener on the caller's signal once the map settles. */
-  const stop = onAbort(outer, () => { fail(outer?.reason, undefined); });
+  const stop = onAbort(outer, reason => { fail(reason, undefined); });
 
   /**
    * Finishes with a rejection, once: aborts running calls and records `[index]` for {@link failedPath}.
@@ -87,7 +87,6 @@ export function mapLimit<T, R>(
   /** Resolves when every item is done; otherwise starts items until `limit` are in flight. */
   const launch = (): void => {
     if (done === input.length) {
-      finished = true;
       stop();
       resolve(output);
       return;
@@ -98,6 +97,7 @@ export function mapLimit<T, R>(
       Promise.resolve()
         .then(() => finished ? undefined : fn(input[index] as T, index, signal))
         .then(result => {
+          // Stryker disable next-line ConditionalExpression: equivalent. After a failure, a late result only queues calls that skip the mapper.
           if (finished) return;
           output[index] = result as Awaited<R>;
           done++;

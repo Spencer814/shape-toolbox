@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { allKeyed, allSettledKeyed, mapLimit } from '../src/index.js';
 
 /**
@@ -85,6 +85,30 @@ describe('allKeyed and allSettledKeyed (v1 propsP)', () => {
       await expect(allKeyed(value as object)).rejects.toThrow(TypeError);
       await expect(allSettledKeyed(value as object)).rejects.toThrow(TypeError);
     }
+  });
+});
+
+describe('allKeyed and allSettledKeyed reject inputs without own properties to await', () => {
+  it('rejects a Map, Set, promise or other thenable with a TypeError', async () => {
+    /** Inputs the types already refuse, passed here as plain objects the way untyped code would. */
+    const inputs: object[] = [
+      new Map([['a', Promise.resolve(1)]]),
+      new Set([1]),
+      Promise.resolve({ a: 1 }),
+      {
+        then(resolve: (value: number) => void): void {
+          resolve(1);
+        },
+      },
+    ];
+    for (const input of inputs) {
+      await expect(allKeyed(input)).rejects.toThrow(new TypeError('allKeyed reads own properties, so it does not accept a Map, Set or promise'));
+      await expect(allSettledKeyed(input)).rejects.toThrow(new TypeError('allSettledKeyed reads own properties, so it does not accept a Map, Set or promise'));
+    }
+  });
+  it('names itself when the input is not an object', async () => {
+    await expect(allKeyed(5 as unknown as object)).rejects.toThrow(new TypeError('allKeyed expects an object'));
+    await expect(allSettledKeyed(5 as unknown as object)).rejects.toThrow(new TypeError('allSettledKeyed expects an object'));
   });
 });
 
@@ -184,5 +208,23 @@ describe('mapLimit', () => {
       await expect(mapLimit([1], () => 1, { concurrency })).rejects.toThrow(RangeError);
     }
     expect(await mapLimit([1], () => 1, { concurrency: Number.POSITIVE_INFINITY })).toEqual([1]);
+  });
+});
+
+describe('mapLimit: contracts the mutation run found unpinned', () => {
+  it('says what concurrency it accepts', async () => {
+    await expect(mapLimit([1], x => x, { concurrency: 0 })).rejects.toThrow(new RangeError('concurrency must be a positive integer or Infinity, got 0'));
+  });
+  it('removes its abort listener once, whether it resolves or two items fail', async () => {
+    for (const fail of [false, true]) {
+      /** A signal that never aborts. */
+      const signal = new AbortController().signal;
+      /** Watches the listener being removed. */
+      const remove = vi.spyOn(signal, 'removeEventListener');
+      await mapLimit([1, 2], x => fail ? Promise.reject(new Error(String(x))) : x, { signal, concurrency: 2 }).catch(() => undefined);
+      await delay(5, undefined);
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
+    }
   });
 });

@@ -100,3 +100,29 @@ describe('immutable path updates', () => {
     expect(score.update(value => value + 1)(data).user.score).toBe(1);
   });
 });
+
+describe('paths: contracts the mutation run found unpinned', () => {
+  it('turns only canonical integer segments into numbers', () => {
+    expect(lens<unknown>()('a.1.-1.0.12.01.-0.1a.a1.1.5').path).toEqual(['a', 1, -1, 0, 12, '01', '-0', '1a', 'a1', 1, 5]);
+  });
+  it('names the function and both arities when called with the wrong number of arguments', () => {
+    /** Each function with its data-first arity. */
+    const cases: [string, (...args: unknown[]) => unknown, number][] = [
+      ['get', get as (...args: unknown[]) => unknown, 2],
+      ['getOr', getOr as (...args: unknown[]) => unknown, 3],
+      ['getWith', getWith as (...args: unknown[]) => unknown, 3],
+      ['set', set as (...args: unknown[]) => unknown, 3],
+      ['update', update as (...args: unknown[]) => unknown, 3],
+    ];
+    for (const [name, fn, arity] of cases) {
+      expect(() => fn()).toThrow(new TypeError(`${name}: expected ${String(arity)} arguments (data first) or ${String(arity - 1)} (data last)`));
+    }
+  });
+  it('names the out-of-range index and refuses a constructor write', () => {
+    /** `set` without its types, to pass paths the types reject. */
+    const untypedSet = set as (obj: unknown, path: unknown, value: unknown) => unknown;
+    expect(() => untypedSet([1], [5], 0)).toThrow(RangeError);
+    expect(() => untypedSet([1], [5], 0)).toThrow(/^index out of range at /);
+    expect(() => untypedSet({}, 'constructor', 1)).toThrow(/^unsafe write path: /);
+  });
+});
