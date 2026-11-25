@@ -1,0 +1,24 @@
+name: Publish
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run check
+      - name: Require a release version
+        id: version
+        run: |
+          node --input-type=module -e "import p from './package.json' with { type:'json' }; if (p.version === '0.0.0') throw new Error('Set a reviewed release version first'); console.log('tag=' + (p.version.includes('-') ? 'beta' : 'latest'))" >> "$GITHUB_OUTPUT"
+      - run: npm publish --provenance --access public --tag ${{ steps.version.outputs.tag }}

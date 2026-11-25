@@ -1,0 +1,35 @@
+[
+  {
+    "name": "plain data passes through",
+    "input": { "a": 1, "b": [true, null, "x"], "c": {} },
+    "all": { "value": { "a": 1, "b": [true, null, "x"], "c": {} } },
+    "settled": { "a": 1, "b": [true, null, "x"], "c": {} }
+  },
+  {
+    "name": "nested promises keep the shape",
+    "input": { "user": { "$resolve": { "id": 1 }, "after": 2 }, "list": [{ "$resolve": "a", "after": 1 }, "b"] },
+    "all": { "value": { "user": { "id": 1 }, "list": ["a", "b"] } },
+    "settled": {
+      "user": { "status": "fulfilled", "value": { "id": 1 } },
+      "list": [{ "status": "fulfilled", "value": "a" }, "b"]
+    }
+  },
+  {
+    "name": "first rejection in time wins and reports its path",
+    "input": {
+      "slow": { "$reject": "slow", "after": 30 },
+      "user": { "orders": [1, { "$reject": "orders", "after": 5 }] }
+    },
+    "all": { "rejects": { "message": "orders", "path": ["user", "orders", 1] } },
+    "settled": {
+      "slow": { "status": "rejected", "message": "slow" },
+      "user": { "orders": [1, { "status": "rejected", "message": "orders" }] }
+    }
+  },
+  {
+    "name": "values inside a resolved value are walked",
+    "input": { "outer": { "$resolve": { "inner": { "$resolve": 2, "after": 1 } }, "after": 1 } },
+    "all": { "value": { "outer": { "inner": 2 } } },
+    "settled": { "outer": { "status": "fulfilled", "value": { "inner": { "status": "fulfilled", "value": 2 } } } }
+  }
+]

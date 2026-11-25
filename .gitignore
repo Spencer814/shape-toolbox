@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+site/
+.docs-check/
+*.tgz
+reports
+.stryker-tmp
+.DS_Store

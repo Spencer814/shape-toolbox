@@ -1,0 +1,33 @@
+[
+  {
+    "name": "nested spec resolves to the same shape",
+    "spec": { "a": { "$resolve": 1, "after": 1 }, "b": { "c": [{ "$resolve": "x", "after": 2 }, { "$resolve": true, "after": 1 }] } },
+    "concurrency": null,
+    "all": { "value": { "a": 1, "b": { "c": ["x", true] } } },
+    "settled": {
+      "a": { "status": "fulfilled", "value": 1 },
+      "b": { "c": [{ "status": "fulfilled", "value": "x" }, { "status": "fulfilled", "value": true }] }
+    }
+  },
+  {
+    "name": "one limit across every depth",
+    "spec": { "a": { "$resolve": 1, "after": 5 }, "b": { "c": { "$resolve": 2, "after": 5 }, "d": [{ "$resolve": 3, "after": 5 }] } },
+    "concurrency": 2,
+    "maxInFlight": 2,
+    "all": { "value": { "a": 1, "b": { "c": 2, "d": [3] } } },
+    "settled": {
+      "a": { "status": "fulfilled", "value": 1 },
+      "b": { "c": { "status": "fulfilled", "value": 2 }, "d": [{ "status": "fulfilled", "value": 3 }] }
+    }
+  },
+  {
+    "name": "a failing leaf reports its path",
+    "spec": { "ok": { "$resolve": 1, "after": 1 }, "user": { "orders": { "$reject": "orders", "after": 2 } } },
+    "concurrency": null,
+    "all": { "rejects": { "message": "orders", "path": ["user", "orders"] } },
+    "settled": {
+      "ok": { "status": "fulfilled", "value": 1 },
+      "user": { "orders": { "status": "rejected", "message": "orders" } }
+    }
+  }
+]

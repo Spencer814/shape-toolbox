@@ -1,0 +1,42 @@
+{
+  "entryPoints": [
+    "src/index.ts"
+  ],
+  "out": "site",
+  "readme": "README.md",
+  "excludePrivate": true,
+  "treatWarningsAsErrors": true,
+  "validation": { "notExported": true, "invalidLink": true, "notDocumented": true },
+  "disableSources": true,
+  "intentionallyNotExported": [
+    "Atomic",
+    "SpecNode",
+    "ParametersOf",
+    "Leaves",
+    "IsUnion",
+    "MergeParameters",
+    "AnyFunction",
+    "CompatibleSpec",
+    "Same",
+    "Key",
+    "IsLoose",
+    "Dynamic",
+    "Clean",
+    "ReadWalk",
+    "ToTuple",
+    "WriteResult",
+    "Missing",
+    "OptionalParent",
+    "SlotFunctions",
+    "EqPredicate",
+    "CheckPath",
+    "Narrow",
+    "CheckWritePath",
+    "HasOptionalParent",
+    "PathTypeError",
+    "WriteOutput",
+    "IsAny",
+    "KeyedKeys",
+    "NotKeyable"
+  ]
+}

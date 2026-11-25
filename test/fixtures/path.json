@@ -1,0 +1,14 @@
+[
+  { "name": "read a nested key", "op": "get", "data": { "a": { "b": [10, 20] } }, "path": ["a", "b", 1], "expect": { "value": 20 } },
+  { "name": "negative index reads from the end", "op": "get", "data": { "list": ["x", "y", "z"] }, "path": ["list", -1], "expect": { "value": "z" } },
+  { "name": "a missing step reads as absent", "op": "get", "data": { "a": null }, "path": ["a", "b", "c"], "expect": { "absent": true } },
+  { "name": "fallback on null", "op": "getOr", "data": { "a": null }, "path": ["a"], "fallback": "d", "expect": { "value": "d" } },
+  { "name": "no fallback on false or 0", "op": "getOr", "data": { "a": false, "b": 0 }, "path": ["b"], "fallback": "d", "expect": { "value": 0 } },
+  { "name": "write copies the path", "op": "set", "data": { "a": { "b": 1 }, "c": { "d": 2 } }, "path": ["a", "b"], "value": 5, "expect": { "value": { "a": { "b": 5 }, "c": { "d": 2 } }, "sharedPaths": [["c"]] } },
+  { "name": "unchanged write returns the same object", "op": "set", "data": { "a": { "b": 1 } }, "path": ["a", "b"], "value": 1, "expect": { "same": true } },
+  { "name": "write appends one past the end", "op": "set", "data": { "list": ["a"] }, "path": ["list", 1], "value": "b", "expect": { "value": { "list": ["a", "b"] } } },
+  { "name": "missing parent is an error", "op": "set", "data": {}, "path": ["a", "b"], "value": 1, "expect": { "error": "TypeError" } },
+  { "name": "missing array element is an error", "op": "set", "data": { "items": [] }, "path": ["items", 0, "price"], "value": 1, "expect": { "error": "TypeError" } },
+  { "name": "index far past the end is an error", "op": "set", "data": { "list": ["a"] }, "path": ["list", 5], "value": "x", "expect": { "error": "RangeError" } },
+  { "name": "unsafe key is an error", "op": "set", "data": { "a": {} }, "path": ["a", "__proto__"], "value": 1, "expect": { "error": "TypeError" } }
+]

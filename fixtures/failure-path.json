@@ -1,0 +1,33 @@
+{
+  "description": "An object error is rejected unchanged and has a string/number failure path.",
+  "operation": "applySpecAsync",
+  "args": [],
+  "mode": "all",
+  "spec": {
+    "nested": {
+      "orders": [
+        {
+          "$task": "failure"
+        }
+      ]
+    }
+  },
+  "tasks": {
+    "failure": {
+      "rejectError": {
+        "name": "Error",
+        "message": "Orders unavailable"
+      }
+    }
+  },
+  "expectedRejection": {
+    "name": "Error",
+    "message": "Orders unavailable",
+    "sameIdentity": true,
+    "path": [
+      "nested",
+      "orders",
+      0
+    ]
+  }
+}
